@@ -8,7 +8,10 @@
       ],
       "env": {
         "DEFAULT_MINIMUM_TOKENS": ""
-      }
+      },
+      "alwaysAllow": [
+        "resolve-library-id"
+      ]
     },
     "filesystem": {
       "command": "npx",
