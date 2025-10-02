@@ -19,11 +19,11 @@ export function translateOpenAIToQolaba(openaiRequest, modelConfig) {
       enable_tool: hasTools(openaiRequest),
       system_msg: getSystemMessage(openaiRequest.messages),
       tools: configureTools(openaiRequest),
-      // Additional parameters
-      token: openaiRequest.token || '',
-      orgID: openaiRequest.orgID || '',
+      // Qolaba API specific parameters
+      token: openaiRequest.token || '123', // Default from curl example
+      orgID: openaiRequest.orgID || 'string',
       function_call_list: openaiRequest.function_call_list || [],
-      systemId: openaiRequest.systemId || '',
+      systemId: openaiRequest.systemId || 'string',
       last_user_query: getLastUserMessage(openaiRequest.messages)
     }
 
@@ -162,7 +162,7 @@ function configureTools(request) {
       csv_analysis: false
     },
     number_of_context: 3,
-    pdf_references: [],
+    pdf_references: [''], // Empty string as in curl example
     embedding_model: ['text-embedding-3-large'],
     image_generation_parameters: {}
   }

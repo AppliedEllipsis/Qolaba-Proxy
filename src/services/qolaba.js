@@ -63,7 +63,7 @@ export class QolabaApiClient {
     const startTime = Date.now()
     
     try {
-      const response = await this.client.post('/stream_chat', payload, {
+      const response = await this.client.post('/streamChat', payload, {
         responseType: 'stream',
         headers: {
           'Accept': 'text/event-stream',
@@ -155,6 +155,17 @@ export class QolabaApiClient {
     } catch (error) {
       const responseTime = Date.now() - startTime
       logQolabaRequest('/chat', 'POST', payload, responseTime, error.response?.status || 'ERROR')
+      throw error
+    }
+  }
+  
+  // Get status endpoint for health checks
+  async getStatus() {
+    try {
+      const response = await this.client.get('/get-status')
+      return response.data
+    } catch (error) {
+      logger.error('Failed to get status:', error)
       throw error
     }
   }

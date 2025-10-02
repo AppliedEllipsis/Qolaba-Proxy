@@ -11,7 +11,7 @@ export const config = {
   },
 
   qolaba: {
-    baseUrl: process.env.QOLABA_BASE_URL || 'https://api.qolaba.ai/v1',
+    baseUrl: process.env.QOLABA_BASE_URL || 'https://qolaba-server-b2b.up.railway.app/api/v1/studio',
     timeout: parseInt(process.env.REQUEST_TIMEOUT) || 300000,
     testApiKey: process.env.TEST_API_KEY || 'your-test-api-key-here'
   },
@@ -51,7 +51,7 @@ export const config = {
     debugEndpoints: process.env.ENABLE_DEBUG_ENDPOINTS === 'true'
   },
 
-  // OpenAI to Qolaba model mappings
+  // OpenAI to Qolaba model mappings (based on actual Qolaba API)
   modelMappings: {
     // OpenAI models -> Qolaba models
     'gpt-4.1-mini-2025-04-14': {
@@ -60,13 +60,13 @@ export const config = {
       provider: 'OpenAI'
     },
     'gpt-4.1-2025-04-14': {
-      llm: 'OpenAI', 
+      llm: 'OpenAI',
       llm_model: 'gpt-4.1-2025-04-14',
       provider: 'OpenAI'
     },
     'gpt-4o-mini': {
       llm: 'OpenAI',
-      llm_model: 'gpt-4o-mini', 
+      llm_model: 'gpt-4o-mini',
       provider: 'OpenAI'
     },
     'gpt-4o': {
@@ -91,6 +91,11 @@ export const config = {
       llm_model: 'claude-opus-4-20250514',
       provider: 'ClaudeAI'
     },
+    'claude-sonnet-4-20250514': {
+      llm: 'ClaudeAI',
+      llm_model: 'claude-sonnet-4-20250514',
+      provider: 'ClaudeAI'
+    },
     
     // Gemini models
     'gemini-1.5-pro': {
@@ -102,6 +107,33 @@ export const config = {
       llm: 'GeminiAI',
       llm_model: 'gemini-2.5-flash',
       provider: 'GeminiAI'
+    },
+    
+    // OpenRouterAI models
+    'grok-3-beta': {
+      llm: 'OpenRouterAI',
+      llm_model: 'x-ai/grok-3-beta',
+      provider: 'OpenRouterAI'
+    },
+    'grok-3-mini-beta': {
+      llm: 'OpenRouterAI',
+      llm_model: 'x-ai/grok-3-mini-beta',
+      provider: 'OpenRouterAI'
+    },
+    'perplexity-sonar-pro': {
+      llm: 'OpenRouterAI',
+      llm_model: 'perplexity/sonar-pro',
+      provider: 'OpenRouterAI'
+    },
+    'deepseek-chat': {
+      llm: 'OpenRouterAI',
+      llm_model: 'deepseek/deepseek-chat',
+      provider: 'OpenRouterAI'
+    },
+    'deepseek-r1': {
+      llm: 'OpenRouterAI',
+      llm_model: 'deepseek/deepseek-r1',
+      provider: 'OpenRouterAI'
     },
     
     // Default fallback

@@ -19,7 +19,9 @@
         "-y",
         "@modelcontextprotocol/server-filesystem",
         "D:\\AI\\qoloba-proxy2\\"
-      ]
+      ],
+      "disabled": true,
+      "alwaysAllow": []
     },
     "sequentialthinking": {
       "command": "npx",
