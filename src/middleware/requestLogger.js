@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid'
 import { logger } from '../services/logger.js'
+import { config } from '../config/index.js'
 
 export const requestLogger = (req, res, next) => {
   // Generate unique request ID
