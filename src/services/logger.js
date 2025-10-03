@@ -2,13 +2,139 @@ import winston from 'winston'
 import { config } from '../config/index.js'
 import { safeStringify, safePayloadSize, sanitizeForLogging } from '../utils/serialization.js'
 
-// Custom log format
+// Rate limiting for log messages to prevent console flooding
+const logRateLimiter = new Map()
+
+/**
+ * Check if a log message should be rate limited
+ * @param {string} level - Log level
+ * @param {string} message - Log message
+ * @param {object} meta - Log metadata
+ * @returns {boolean} - True if message should be logged, false if rate limited
+ */
+function shouldLog(level, message, meta) {
+  const requestId = meta?.requestId || 'global'
+  const key = `${level}:${message}:${requestId}`
+  const now = Date.now()
+  
+  // Get existing rate limit entry
+  const entry = logRateLimiter.get(key)
+  
+  if (!entry) {
+    // First occurrence - log and set rate limit
+    logRateLimiter.set(key, {
+      count: 1,
+      firstLog: now,
+      lastLog: now
+    })
+    return true
+  }
+  
+  // Check if we should log this occurrence
+  const timeSinceFirstLog = now - entry.firstLog
+  const timeSinceLastLog = now - entry.lastLog
+  
+  // Log first occurrence immediately
+  if (entry.count === 1) {
+    entry.count++
+    entry.lastLog = now
+    return true
+  }
+  
+  // Rate limit rules based on error severity
+  let logInterval = 5000 // Default 5 seconds
+  let maxLogsPerMinute = 12 // Default max 12 logs per minute
+  
+  if (level === 'error') {
+    logInterval = 2000 // 2 seconds for errors
+    maxLogsPerMinute = 30 // Max 30 errors per minute
+  } else if (level === 'warn') {
+    logInterval = 3000 // 3 seconds for warnings
+    maxLogsPerMinute = 20 // Max 20 warnings per minute
+  }
+  
+  // Check time-based rate limiting
+  if (timeSinceLastLog < logInterval) {
+    return false // Rate limited
+  }
+  
+  // Check count-based rate limiting
+  const logsInLastMinute = Math.floor((now - entry.firstLog) / 60000) * maxLogsPerMinute +
+                           Math.min(entry.count % maxLogsPerMinute, maxLogsPerMinute - 1)
+  
+  if (entry.count >= maxLogsPerMinute && timeSinceFirstLog < 60000) {
+    return false // Exceeded max logs per minute
+  }
+  
+  // Update rate limit entry
+  entry.count++
+  entry.lastLog = now
+  
+  // Clean up old entries (older than 10 minutes)
+  if (now - entry.firstLog > 600000) {
+    logRateLimiter.delete(key)
+  }
+  
+  return true
+}
+
+/**
+ * Get rate limit summary for aggregated logging
+ * @param {string} level - Log level
+ * @param {string} message - Log message
+ * @param {object} meta - Log metadata
+ * @returns {object|null} - Rate limit summary or null if no aggregation needed
+ */
+function getRateLimitSummary(level, message, meta) {
+  const requestId = meta?.requestId || 'global'
+  const key = `${level}:${message}:${requestId}`
+  const entry = logRateLimiter.get(key)
+  
+  if (entry && entry.count > 1) {
+    return {
+      suppressedCount: entry.count - 1,
+      timeWindow: Math.floor((Date.now() - entry.firstLog) / 1000)
+    }
+  }
+  
+  return null
+}
+
+// Cleanup function for rate limiter (called periodically)
+export const cleanupRateLimiter = () => {
+  const now = Date.now()
+  const cutoff = now - 600000 // 10 minutes ago
+  
+  for (const [key, entry] of logRateLimiter.entries()) {
+    if (entry.firstLog < cutoff) {
+      logRateLimiter.delete(key)
+    }
+  }
+}
+
+// Schedule periodic cleanup
+setInterval(cleanupRateLimiter, 300000) // Every 5 minutes
+
+// Custom log format with rate limiting
 const logFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.errors({ stack: true }),
   winston.format.json(),
   winston.format.printf(({ level, message, timestamp, ...meta }) => {
+    // Check rate limiting
+    if (!shouldLog(level, message, meta)) {
+      return null // Skip this log entry
+    }
+    
+    // Check for rate limit summary
+    const rateLimitSummary = getRateLimitSummary(level, message, meta)
+    
     let log = `${timestamp} [${level.toUpperCase()}]: ${message}`
+    
+    // Add rate limit information if applicable
+    if (rateLimitSummary) {
+      log += ` (rate limited: ${rateLimitSummary.suppressedCount} similar messages suppressed in ${rateLimitSummary.timeWindow}s)`
+    }
     
     // Add metadata if present
     if (Object.keys(meta).length > 0) {
@@ -26,7 +152,20 @@ const verboseLogFormat = winston.format.combine(
   winston.format.errors({ stack: true }),
   winston.format.json(),
   winston.format.printf(({ level, message, timestamp, ...meta }) => {
+    // Check rate limiting
+    if (!shouldLog(level, message, meta)) {
+      return null // Skip this log entry
+    }
+    
+    // Check for rate limit summary
+    const rateLimitSummary = getRateLimitSummary(level, message, meta)
+    
     let log = `${timestamp} [${level.toUpperCase()}]: ${message}`
+    
+    // Add rate limit information if applicable
+    if (rateLimitSummary) {
+      log += ` (rate limited: ${rateLimitSummary.suppressedCount} suppressed in ${rateLimitSummary.timeWindow}s)`
+    }
     
     // Add detailed metadata for verbose logging
     if (Object.keys(meta).length > 0) {
@@ -50,6 +189,27 @@ const debugLogFormat = winston.format.combine(
   winston.format.errors({ stack: true }),
   winston.format.colorize(),
   winston.format.printf(({ level, message, timestamp, ...meta }) => {
+    // Check rate limiting (less strict for debug)
+    const requestId = meta?.requestId || 'global'
+    const key = `${level}:${message}:${requestId}`
+    const entry = logRateLimiter.get(key)
+    
+    if (entry && entry.count > 5 && level === 'debug') {
+      return null // Skip excessive debug logs
+    }
+    
+    // Update rate limit for debug
+    if (entry) {
+      entry.count++
+      entry.lastLog = Date.now()
+    } else {
+      logRateLimiter.set(key, {
+        count: 1,
+        firstLog: Date.now(),
+        lastLog: Date.now()
+      })
+    }
+    
     let log = `${timestamp} [${level.toUpperCase()}]: ${message}`
     
     // Add metadata with special handling for debug level

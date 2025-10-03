@@ -92,15 +92,16 @@ export class QolabaApiClient {
           'Accept': 'text/event-stream',
           'Cache-Control': 'no-cache'
         },
-        timeout: 60000 // 60 second timeout for streaming
+        timeout: 90000 // CRITICAL FIX: Extended to 90 seconds to handle provider latency
       })
 
       let buffer = ''
       let totalOutput = ''
       let isStreamEnded = false
+      let lastChunkTime = Date.now()
       
       return new Promise((resolve, reject) => {
-        // Handle stream data with proper error handling
+        // CRITICAL FIX: Improved stream data handling with provider latency accommodation
         const handleData = (chunk) => {
           try {
             if (isStreamEnded) {
@@ -108,6 +109,7 @@ export class QolabaApiClient {
               return
             }
             
+            lastChunkTime = Date.now()
             buffer += chunk.toString()
             
             // Process complete SSE messages
@@ -145,18 +147,7 @@ export class QolabaApiClient {
                   logQolabaRequest('/streamChat', 'POST', payload, responseTime, 200)
                   
                   // CRITICAL FIX: Ensure proper stream cleanup on completion
-                  if (response.data && typeof response.data.destroy === 'function') {
-                    try {
-                      response.data.destroy()
-                      logger.debug('Stream destroyed successfully on completion', {
-                        requestId: 'unknown' // We don't have requestId here
-                      })
-                    } catch (destroyError) {
-                      logger.warn('Failed to destroy stream on completion', {
-                        error: destroyError.message
-                      })
-                    }
-                  }
+                  cleanupStream(response, 'completion')
                   
                   resolve({
                     output: totalOutput,
@@ -183,7 +174,7 @@ export class QolabaApiClient {
           }
         }
 
-        // Handle stream errors
+        // CRITICAL FIX: Enhanced error handling with better cleanup
         const handleError = (error) => {
           if (isStreamEnded) return
           
@@ -197,29 +188,18 @@ export class QolabaApiClient {
             responseTime: `${responseTime}ms`
           })
           
+          cleanupStream(response, 'error')
           reject(new Error(`Streaming error: ${error.message}`))
         }
 
-        // Handle stream end
+        // CRITICAL FIX: Enhanced end handling with proper cleanup
         const handleEnd = () => {
           if (isStreamEnded) return
           
           isStreamEnded = true
           const responseTime = Date.now() - startTime
           
-          // CRITICAL FIX: Ensure proper stream cleanup
-          if (response.data && typeof response.data.destroy === 'function') {
-            try {
-              response.data.destroy()
-              logger.debug('Stream destroyed successfully', {
-                requestId: 'unknown' // We don't have requestId here
-              })
-            } catch (destroyError) {
-              logger.warn('Failed to destroy stream on end', {
-                error: destroyError.message
-              })
-            }
-          }
+          cleanupStream(response, 'end')
           
           // If we didn't get a proper completion signal, resolve with what we have
           if (totalOutput.length > 0) {
@@ -238,38 +218,77 @@ export class QolabaApiClient {
           }
         }
 
+        // CRITICAL FIX: Centralized stream cleanup function
+        const cleanupStream = (response, reason) => {
+          try {
+            if (response.data && typeof response.data.destroy === 'function') {
+              response.data.destroy()
+              logger.debug('Stream destroyed successfully', {
+                requestId: 'unknown', // We don't have requestId here
+                reason
+              })
+            }
+            
+            // Clean up axios request if possible
+            if (response.request && typeof response.request.destroy === 'function') {
+              response.request.destroy()
+            }
+          } catch (destroyError) {
+            logger.warn('Failed to destroy stream during cleanup', {
+              error: destroyError.message,
+              reason
+            })
+          }
+        }
+
         // Set up event listeners with proper error handling
         response.data.on('data', handleData)
         response.data.on('error', handleError)
         response.data.on('end', handleEnd)
         
-        // Handle stream timeout with proper cleanup
-        const timeout = setTimeout(() => {
+        // CRITICAL FIX: Adaptive timeout based on data activity
+        const checkStreamActivity = () => {
           if (!isStreamEnded) {
-            isStreamEnded = true
-            logger.warn('Stream timeout reached, cleaning up', {
-              requestId: 'unknown', // We don't have requestId here
-              timeout: '55000ms'
-            })
+            const timeSinceLastChunk = Date.now() - lastChunkTime
+            const totalElapsed = Date.now() - startTime
+            
+            // Allow more time for provider latency but don't wait indefinitely
+            if (timeSinceLastChunk > 60000) { // 60 seconds of inactivity
+              isStreamEnded = true
+              logger.warn('Stream inactive for too long, cleaning up', {
+                requestId: 'unknown',
+                inactivityTime: `${timeSinceLastChunk}ms`,
+                totalElapsed: `${totalElapsed}ms`
+              })
 
-            // Properly destroy the stream and cleanup
-            if (response.data && typeof response.data.destroy === 'function') {
-              response.data.destroy()
+              cleanupStream(response, 'inactivity_timeout')
+              reject(new Error('Stream inactive timeout'))
+              return
             }
+            
+            if (totalElapsed > 85000) { // 85 seconds absolute maximum
+              isStreamEnded = true
+              logger.warn('Stream absolute timeout reached, cleaning up', {
+                requestId: 'unknown',
+                totalElapsed: `${totalElapsed}ms`
+              })
 
-            // Clean up axios request if possible
-            if (response.request && typeof response.request.destroy === 'function') {
-              response.request.destroy()
+              cleanupStream(response, 'absolute_timeout')
+              reject(new Error('Stream absolute timeout'))
+              return
             }
-
-            reject(new Error('Streaming timeout'))
+            
+            // Continue checking
+            activityCheckTimeout = setTimeout(checkStreamActivity, 10000) // Check every 10 seconds
           }
-        }, 55000) // Slightly less than the axios timeout
+        }
+        
+        let activityCheckTimeout = setTimeout(checkStreamActivity, 10000)
 
-        // Clean up timeout when promise resolves/rejects
+        // Clean up timeouts when promise resolves/rejects
         const cleanup = () => {
-          if (timeout) {
-            clearTimeout(timeout)
+          if (activityCheckTimeout) {
+            clearTimeout(activityCheckTimeout)
           }
         }
 

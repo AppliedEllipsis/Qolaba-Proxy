@@ -3,46 +3,158 @@ import { translateQolabaToOpenAI, extractToolCalls } from './translator.js'
 import { config } from '../config/index.js'
 import { createResponseState, withStreamingErrorBoundary, SafeSSEWriter } from './responseState.js'
 
-// CRITICAL FIX: Improved streaming response handler with coordinated termination
-export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayload, requestId) {
-// Create response state tracker
-const responseState = createResponseState(res, requestId)
+/**
+ * Unified timeout manager for streaming requests to prevent race conditions
+ */
+class StreamingTimeoutManager {
+  constructor(requestId, responseState, abortController) {
+    this.requestId = requestId
+    this.responseState = responseState
+    this.abortController = abortController
+    this.timeouts = new Map()
+    this.isTerminated = false
+    this.terminationReason = null
+  }
 
-// Clear the request timeout for streaming requests to prevent conflicts
-if (req.timeoutRef) {
-  clearTimeout(req.timeoutRef)
-  req.timeoutRef = null
-  logger.debug('Cleared request timeout for streaming', { requestId })
-}
+  /**
+   * Set a timeout with proper coordination
+   */
+  setTimeout(callback, delayMs, name = 'default') {
+    if (this.isTerminated) {
+      return null
+    }
 
-// CRITICAL FIX: Replace local variables with response state tracking
-let cleanupTimeoutRef = null
+    // Clear existing timeout with same name
+    this.clearTimeout(name)
 
-// Add abort controller for request cancellation
-const abortController = new AbortController()
+    const timeoutId = setTimeout(async () => {
+      if (!this.isTerminated) {
+        try {
+          await callback()
+        } catch (error) {
+          logger.error('Timeout callback failed', {
+            requestId: this.requestId,
+            timeoutName: name,
+            error: error.message
+          })
+        }
+      }
+    }, delayMs)
 
-// CRITICAL FIX: Replace forceResponseTermination with coordinated termination
-const handleTimeout = async () => {
-  logger.warn('Streaming timeout reached, initiating coordinated termination', { requestId })
-  try {
-    await responseState.coordinatedTermination('timeout')
-  } catch (error) {
-    logger.warn('Coordinated timeout termination failed', {
-      requestId,
-      error: error.message
+    this.timeouts.set(name, timeoutId)
+    return timeoutId
+  }
+
+  /**
+   * Clear a specific timeout
+   */
+  clearTimeout(name) {
+    const timeoutId = this.timeouts.get(name)
+    if (timeoutId) {
+      clearTimeout(timeoutId)
+      this.timeouts.delete(name)
+      return true
+    }
+    return false
+  }
+
+  /**
+   * Clear all timeouts
+   */
+  clearTimeouts() {
+    for (const [name, timeoutId] of this.timeouts.entries()) {
+      clearTimeout(timeoutId)
+    }
+    this.timeouts.clear()
+  }
+
+  /**
+   * Mark as terminated and prevent future timeouts
+   */
+  terminate(reason) {
+    if (this.isTerminated) {
+      return
+    }
+
+    this.isTerminated = true
+    this.terminationReason = reason
+    this.clearTimeouts()
+
+    logger.debug('Timeout manager terminated', {
+      requestId: this.requestId,
+      reason
     })
+  }
+
+  /**
+   * Check if terminated
+   */
+  isTerminatedManager() {
+    return this.isTerminated
   }
 }
 
-// Set timeout with proper cleanup
-cleanupTimeoutRef = setTimeout(() => handleTimeout(), 30000)
+// CRITICAL FIX: Improved streaming response handler with coordinated termination
+export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayload, requestId) {
+  // Create response state tracker
+  const responseState = createResponseState(res, requestId)
 
-// Enhanced disconnect detection
-let isClientDisconnected = false
+  // Clear the request timeout for streaming requests to prevent conflicts
+  if (req.timeoutRef) {
+    clearTimeout(req.timeoutRef)
+    req.timeoutRef = null
+    logger.debug('Cleared request timeout for streaming', { requestId })
+  }
+
+  // Add abort controller for request cancellation
+  const abortController = new AbortController()
+
+  // Create unified timeout manager
+  const timeoutManager = new StreamingTimeoutManager(requestId, responseState, abortController)
+
+  // CRITICAL FIX: Coordinated timeout handler using timeout manager
+  const handleTimeout = async (reason = 'timeout') => {
+    logger.warn('Streaming timeout reached, initiating coordinated termination', {
+      requestId,
+      reason
+    })
+    
+    try {
+      await responseState.coordinatedTermination(reason)
+    } catch (error) {
+      logger.warn('Coordinated timeout termination failed', {
+        requestId,
+        reason,
+        error: error.message
+      })
+    }
+    
+    // Terminate timeout manager to prevent further timeouts
+    timeoutManager.terminate('timeout_triggered')
+  }
+
+  // Set streaming timeout (45 seconds - longer than default to handle provider latency)
+  timeoutManager.setTimeout(() => handleTimeout('streaming_timeout'), 45000, 'streaming')
+
+  // Set secondary timeout for very long responses (2 minutes)
+  timeoutManager.setTimeout(() => handleTimeout('max_duration_timeout'), 120000, 'max_duration')
+
+  // Enhanced disconnect detection
+  let isClientDisconnected = false
   
-  // CRITICAL FIX: Replace forceResponseTermination with coordinated termination handler
+  // CRITICAL FIX: Coordinated termination handler using timeout manager
   const handleTermination = async (reason) => {
+    if (timeoutManager.isTerminatedManager()) {
+      logger.debug('Termination already in progress, skipping', {
+        requestId,
+        reason,
+        existingReason: timeoutManager.terminationReason
+      })
+      return
+    }
+
     logger.debug('Initiating termination', { requestId, reason })
+    
     try {
       await responseState.coordinatedTermination(reason)
     } catch (error) {
@@ -52,9 +164,12 @@ let isClientDisconnected = false
         error: error.message
       })
     }
+    
+    // Terminate timeout manager to prevent further timeouts
+    timeoutManager.terminate(reason)
   }
   
-  // Handle response errors
+  // Handle response errors with better coordination
   const handleResponseError = (error) => {
     logger.error('Response error during streaming', {
       requestId,
@@ -62,7 +177,7 @@ let isClientDisconnected = false
       code: error.code
     })
     
-    if (!isClientDisconnected) {
+    if (!isClientDisconnected && !timeoutManager.isTerminatedManager()) {
       abortController.abort()
       handleTermination('response_error').catch(error => {
         logger.warn('Response error termination failed', {
@@ -82,8 +197,12 @@ let isClientDisconnected = false
   // Listen for response errors
   res.on('error', handleResponseError)
 
-  // Handle client disconnect
+  // Handle client disconnect with proper coordination
   const handleClientDisconnect = () => {
+    if (isClientDisconnected) {
+      return // Already handled
+    }
+    
     logger.info('Client disconnected during streaming', { requestId })
     isClientDisconnected = true
     abortController.abort()
@@ -98,10 +217,9 @@ let isClientDisconnected = false
   // Listen for client disconnect
   res.on('close', handleClientDisconnect)
   res.on('finish', () => {
-    // Clear cleanup timeout
-    if (cleanupTimeoutRef) {
-      clearTimeout(cleanupTimeoutRef)
-    }
+    // Clear all timeouts using timeout manager
+    timeoutManager.terminate('streaming_complete')
+    
     // Clear any remaining request timeout
     if (req.timeoutRef) {
       clearTimeout(req.timeoutRef)

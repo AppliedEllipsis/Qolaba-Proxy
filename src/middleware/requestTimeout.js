@@ -22,7 +22,7 @@ export const requestTimeout = (defaultTimeoutMs = 30000) => {
     req.isStreaming = isStreamingRequest
     req.timeoutMs = timeoutMs
 
-    // Set a timeout for the request
+    // CRITICAL FIX: Stream-aware timeout handling
     const timeout = setTimeout(() => {
       const duration = Date.now() - startTime
 
@@ -35,7 +35,8 @@ export const requestTimeout = (defaultTimeoutMs = 30000) => {
         isStreaming: isStreamingRequest
       })
 
-      // Try to gracefully close the response
+      // CRITICAL FIX: Only send timeout response if headers haven't been sent
+      // This prevents "Cannot set headers after they are sent to the client" errors
       if (!res.headersSent) {
         try {
           res.status(408).json({
@@ -53,18 +54,27 @@ export const requestTimeout = (defaultTimeoutMs = 30000) => {
             error: error.message
           })
         }
+      } else {
+        // For streaming requests where headers are already sent, just log and let the stream handle it
+        logger.debug('Timeout reached but headers already sent, allowing stream to continue', {
+          requestId,
+          isStreaming: isStreamingRequest,
+          duration: `${duration}ms`
+        })
       }
 
-      // Force close the connection if needed
-      try {
-        if (res.socket && !res.socket.destroyed) {
-          res.socket.destroy()
+      // Force close the connection only if it's not a healthy streaming request
+      if (!isStreamingRequest || res.headersSent) {
+        try {
+          if (res.socket && !res.socket.destroyed) {
+            res.socket.destroy()
+          }
+        } catch (error) {
+          logger.warn('Failed to destroy socket on timeout', {
+            requestId,
+            error: error.message
+          })
         }
-      } catch (error) {
-        logger.warn('Failed to destroy socket on timeout', {
-          requestId,
-          error: error.message
-        })
       }
     }, timeoutMs)
 

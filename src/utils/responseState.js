@@ -237,6 +237,53 @@
     }
 
     /**
+     * CRITICAL FIX: Prevent duplicate operations
+     */
+    isOperationInProgress(operationType) {
+      // Check if operation is already in progress
+      if (this.isTerminationInProgress && operationType === 'termination') {
+        return true
+      }
+      
+      if (this.isEnded && operationType === 'response') {
+        return true
+      }
+      
+      if (this.isDestroyed && operationType === 'any') {
+        return true
+      }
+      
+      return false
+    }
+
+    /**
+     * CRITICAL FIX: Safe operation wrapper with duplicate prevention
+     */
+    async safeOperation(operationType, operation, reason = '') {
+      if (this.isOperationInProgress(operationType)) {
+        logger.debug('Operation already in progress, skipping', {
+          requestId: this.requestId,
+          operationType,
+          reason
+        })
+        return false
+      }
+
+      try {
+        await operation()
+        return true
+      } catch (error) {
+        logger.warn('Operation failed', {
+          requestId: this.requestId,
+          operationType,
+          reason,
+          error: error.message
+        })
+        return false
+      }
+    }
+
+    /**
      * Internal method to perform the actual termination
      */
     async _performTermination(reason) {
