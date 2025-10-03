@@ -2,6 +2,7 @@ import { logger } from '../services/logger.js'
 import { translateQolabaToOpenAI, extractToolCalls } from './translator.js'
 import { config } from '../config/index.js'
 import { createResponseState, withStreamingErrorBoundary, SafeSSEWriter } from './responseState.js'
+import { concurrencyMonitor } from './concurrencyMonitor.js'
 
 /**
  * Unified timeout manager for streaming requests to prevent race conditions
@@ -94,103 +95,137 @@ class StreamingTimeoutManager {
   }
 }
 
-// CRITICAL FIX: Improved streaming response handler with coordinated termination
+// CRITICAL FIX: Improved streaming response handler with unified timeout management
 export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayload, requestId) {
+  // Register with concurrency monitor
+  concurrencyMonitor.registerRequest(requestId, {
+    type: 'streaming',
+    model: qolabaPayload.model,
+    stream: true
+  })
+
   // Create response state tracker
   const responseState = createResponseState(res, requestId)
 
-  // ENHANCEMENT: Coordinate with request timeout middleware instead of just clearing
-  if (req.timeoutRef) {
-    // Store the timeout reference in ResponseState for coordination
-    if (res.setRequestTimeoutRef && typeof res.setRequestTimeoutRef === 'function') {
-      res.setRequestTimeoutRef(req.timeoutRef)
-    }
-    
-    // Don't clear the timeout immediately - let ResponseState coordinate it
-    logger.debug('Request timeout registered with streaming ResponseState', { requestId })
+  // ENHANCEMENT: Use unified timeout manager instead of multiple competing systems
+  const unifiedTimeoutManager = req.unifiedTimeoutManager || res.unifiedTimeoutManager
+  if (unifiedTimeoutManager) {
+    logger.debug('Using unified timeout manager for streaming', { requestId })
+    // Update activity to prevent premature timeouts
+    unifiedTimeoutManager.updateActivity()
   } else {
-    logger.debug('No request timeout reference found for streaming', { requestId })
+    logger.warn('No unified timeout manager available, using fallback', { requestId })
   }
 
   // Add abort controller for request cancellation
   const abortController = new AbortController()
+  concurrencyMonitor.trackResourceAllocation(requestId, 'abort_controller', requestId)
 
-  // Create unified timeout manager
-  const timeoutManager = new StreamingTimeoutManager(requestId, responseState, abortController)
-
-  // CRITICAL FIX: Coordinated timeout handler using timeout manager
-  const handleTimeout = async (reason = 'timeout') => {
-    logger.warn('Streaming timeout reached, initiating coordinated termination', {
-      requestId,
-      reason
-    })
-    
+  // CRITICAL FIX: Safe termination handler with proper Promise handling
+  const safeHandleTermination = async (reason) => {
     try {
+      logger.debug('Starting safe termination', { requestId, reason })
+      
+      // Update activity to show we're handling termination
+      if (unifiedTimeoutManager) {
+        unifiedTimeoutManager.updateActivity()
+      }
+      
+      // Use coordinated termination from response state
       await responseState.coordinatedTermination(reason)
+      
+      // Track cleanup event
+      concurrencyMonitor.trackCleanupEvent(requestId, 'streaming_termination', { reason })
+      
+      logger.debug('Safe termination completed', { requestId, reason })
     } catch (error) {
-      logger.warn('Coordinated timeout termination failed', {
+      logger.error('Safe termination failed', {
         requestId,
         reason,
         error: error.message
       })
+      
+      // Track failure but don't re-throw to prevent hanging
+      concurrencyMonitor.trackRaceCondition(requestId, 'termination_failure', {
+        reason,
+        error: error.message
+      })
     }
-    
-    // Terminate timeout manager to prevent further timeouts
-    timeoutManager.terminate('timeout_triggered')
   }
 
-  // Set streaming timeout (45 seconds - longer than default to handle provider latency)
-  timeoutManager.setTimeout(() => handleTimeout('streaming_timeout'), 45000, 'streaming')
-
-  // Set secondary timeout for very long responses (2 minutes)
-  timeoutManager.setTimeout(() => handleTimeout('max_duration_timeout'), 120000, 'max_duration')
+  // Use unified timeout manager if available, otherwise use minimal fallback
+  if (unifiedTimeoutManager) {
+    // The unified manager already handles automatic timeouts
+    logger.debug('Unified timeout manager will handle streaming timeouts', { requestId })
+  } else {
+    // Fallback timeout handling (should not happen with unified manager)
+    logger.warn('Using fallback timeout handling - unified manager not available', { requestId })
+    setTimeout(() => {
+      if (!responseState.isEnded) {
+        safeHandleTermination('fallback_timeout')
+      }
+    }, 120000) // 2 minutes fallback
+  }
 
   // Enhanced disconnect detection
   let isClientDisconnected = false
   
-  // CRITICAL FIX: Coordinated termination handler using timeout manager
+  // CRITICAL FIX: Coordinated termination handler with proper async safety
   const handleTermination = async (reason) => {
-    if (timeoutManager.isTerminatedManager()) {
-      logger.debug('Termination already in progress, skipping', {
+    // Check if unified timeout manager is available and not terminated
+    if (unifiedTimeoutManager && !unifiedTimeoutManager.canOperate()) {
+      logger.debug('Termination already in progress via unified manager', {
         requestId,
         reason,
-        existingReason: timeoutManager.terminationReason
+        existingReason: unifiedTimeoutManager.terminationReason
       })
       return
     }
 
-    logger.debug('Initiating termination', { requestId, reason })
+    logger.debug('Initiating coordinated termination', { requestId, reason })
     
-    try {
-      await responseState.coordinatedTermination(reason)
-    } catch (error) {
-      logger.warn('Coordinated termination failed', {
-        requestId,
-        reason,
-        error: error.message
-      })
+    // Use the safe termination handler
+    await safeHandleTermination(reason)
+    
+    // Terminate unified timeout manager if available
+    if (unifiedTimeoutManager) {
+      try {
+        await unifiedTimeoutManager.terminate(reason)
+      } catch (error) {
+        logger.warn('Failed to terminate unified timeout manager', {
+          requestId,
+          reason,
+          error: error.message
+        })
+      }
     }
-    
-    // Terminate timeout manager to prevent further timeouts
-    timeoutManager.terminate(reason)
   }
   
-  // Handle response errors with better coordination
-  const handleResponseError = (error) => {
+  // Handle response errors with better coordination and Promise safety
+  const handleResponseError = async (error) => {
     logger.error('Response error during streaming', {
       requestId,
       error: error.message,
       code: error.code
     })
     
-    if (!isClientDisconnected && !timeoutManager.isTerminatedManager()) {
-      abortController.abort()
-      handleTermination('response_error').catch(error => {
-        logger.warn('Response error termination failed', {
-          requestId,
-          error: error.message
-        })
-      })
+    if (!isClientDisconnected) {
+      const canTerminate = unifiedTimeoutManager ? 
+        unifiedTimeoutManager.canOperate() : true
+      
+      if (canTerminate) {
+        abortController.abort()
+        
+        // CRITICAL FIX: Properly handle async termination without .catch() on non-promise
+        try {
+          await handleTermination('response_error')
+        } catch (terminationError) {
+          logger.warn('Response error termination failed', {
+            requestId,
+            error: terminationError.message
+          })
+        }
+      }
     }
   }
 
@@ -203,8 +238,8 @@ export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayl
   // Listen for response errors
   res.on('error', handleResponseError)
 
-  // Handle client disconnect with proper coordination
-  const handleClientDisconnect = () => {
+  // Handle client disconnect with proper coordination and Promise safety
+  const handleClientDisconnect = async () => {
     if (isClientDisconnected) {
       return // Already handled
     }
@@ -212,25 +247,42 @@ export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayl
     logger.info('Client disconnected during streaming', { requestId })
     isClientDisconnected = true
     abortController.abort()
-    handleTermination('client_disconnect').catch(error => {
+    
+    // CRITICAL FIX: Properly handle async termination without .catch() on non-promise
+    try {
+      await handleTermination('client_disconnect')
+    } catch (error) {
       logger.warn('Client disconnect termination failed', {
         requestId,
         error: error.message
       })
-    })
+    }
   }
 
   // Listen for client disconnect
   res.on('close', handleClientDisconnect)
-  res.on('finish', () => {
-    // Clear all timeouts using timeout manager
-    timeoutManager.terminate('streaming_complete')
+  res.on('finish', async () => {
+    logger.debug('Stream finished, starting cleanup', { requestId })
     
-    // Clear any remaining request timeout
-    if (req.timeoutRef) {
-      clearTimeout(req.timeoutRef)
-      req.timeoutRef = null
+    // Update activity before cleanup
+    if (unifiedTimeoutManager) {
+      unifiedTimeoutManager.updateActivity()
     }
+    
+    // Terminate unified timeout manager
+    if (unifiedTimeoutManager) {
+      try {
+        await unifiedTimeoutManager.terminate('streaming_complete')
+      } catch (error) {
+        logger.warn('Failed to terminate unified timeout manager on finish', {
+          requestId,
+          error: error.message
+        })
+      }
+    }
+    
+    // Track final cleanup
+    concurrencyMonitor.trackCleanupEvent(requestId, 'streaming_finish', {})
   })
   
   return withStreamingErrorBoundary(async (responseState) => {
@@ -253,6 +305,11 @@ export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayl
 
     // Start streaming with proper error handling
     await qolabaClient.streamChat(qolabaPayload, (chunk) => {
+      // Update activity to show streaming progress
+      if (unifiedTimeoutManager) {
+        unifiedTimeoutManager.updateActivity()
+      }
+
       if (chunk.output) {
         fullResponse += chunk.output
 
@@ -320,24 +377,38 @@ export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayl
 
     // CRITICAL FIX: Use coordinated termination to prevent race conditions
     try {
+      // Update activity before completion
+      if (unifiedTimeoutManager) {
+        unifiedTimeoutManager.updateActivity()
+      }
+      
       await handleTermination('streaming_complete')
+      
+      // Complete request in concurrency monitor
+      concurrencyMonitor.completeRequest(requestId, 'completed', {
+        responseLength: fullResponse.length,
+        model: qolabaPayload.model
+      })
+      
     } catch (error) {
       logger.warn('Streaming completion termination failed', {
         requestId,
         error: error.message
       })
+      
+      // Still mark as completed even if termination failed
+      concurrencyMonitor.completeRequest(requestId, 'completed_with_errors', {
+        error: error.message,
+        responseLength: fullResponse.length
+      })
     }
 
-    // ENHANCEMENT: Cancel all registered timeouts on streaming completion
-    if (res.cancelAllTimeouts && typeof res.cancelAllTimeouts === 'function') {
+    // ENHANCEMENT: Cancel unified timeout manager if available
+    if (unifiedTimeoutManager) {
       try {
-        const cancelled = res.cancelAllTimeouts('streaming_completed')
-        logger.debug('Cancelled all registered timeouts on streaming completion', {
-          requestId,
-          cancelled
-        })
+        await unifiedTimeoutManager.terminate('streaming_completed')
       } catch (error) {
-        logger.warn('Failed to cancel timeouts on streaming completion', {
+        logger.warn('Failed to terminate unified timeout manager on completion', {
           requestId,
           error: error.message
         })
@@ -353,24 +424,32 @@ export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayl
 
     // CRITICAL FIX: Use coordinated termination for error handling
     try {
-      await responseState.coordinatedTermination('streaming_error')
+      await safeHandleTermination('streaming_error')
+      
+      // Mark as failed in concurrency monitor
+      concurrencyMonitor.completeRequest(requestId, 'error', {
+        error: error.message
+      })
+      
     } catch (terminationError) {
       logger.warn('Error termination failed', {
         requestId,
         error: terminationError.message
       })
+      
+      // Still mark as failed even if termination failed
+      concurrencyMonitor.completeRequest(requestId, 'error_termination_failed', {
+        error: error.message,
+        terminationError: terminationError.message
+      })
     }
 
-    // ENHANCEMENT: Cancel all registered timeouts on streaming error
-    if (res.cancelAllTimeouts && typeof res.cancelAllTimeouts === 'function') {
+    // ENHANCEMENT: Terminate unified timeout manager on error
+    if (unifiedTimeoutManager) {
       try {
-        const cancelled = res.cancelAllTimeouts('streaming_error')
-        logger.debug('Cancelled all registered timeouts on streaming error', {
-          requestId,
-          cancelled
-        })
+        await unifiedTimeoutManager.terminate('streaming_error')
       } catch (error) {
-        logger.warn('Failed to cancel timeouts on streaming error', {
+        logger.warn('Failed to terminate unified timeout manager on error', {
           requestId,
           error: error.message
         })

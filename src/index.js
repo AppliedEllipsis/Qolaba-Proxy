@@ -9,7 +9,8 @@ import { createServer } from 'http'
 import { errorHandler } from './middleware/errorHandler.js'
 import { requestLogger } from './middleware/requestLogger.js'
 import { rateLimit } from './middleware/rateLimit.js'
-import { requestTimeout } from './middleware/requestTimeout.js'
+import { createUnifiedRequestTimeout } from './utils/unifiedTimeoutManager.js'
+import { concurrencyMonitor } from './utils/concurrencyMonitor.js'
 import { handleJsonParsingError } from './middleware/jsonValidator.js'
 import { healthMonitor } from './middleware/healthMonitor.js'
 
@@ -18,6 +19,7 @@ import chatRoutes from './routes/chat.js'
 import modelsRoutes from './routes/models.js'
 import healthRoutes from './routes/health.js'
 import connectionHealthRoutes from './routes/connectionHealth.js'
+import concurrencyRoutes from './routes/concurrency.js'
 
 // Import services
 import { logger } from './services/logger.js'
@@ -51,8 +53,13 @@ if (config.logging.enabled) {
 }
 app.use(requestLogger)
 
-// Request timeout middleware (prevents hanging requests)
-app.use(requestTimeout(30000)) // 30 second timeout for non-streaming requests
+// Request timeout middleware using unified timeout manager (prevents hanging requests)
+app.use(createUnifiedRequestTimeout({
+  defaultTimeout: 30000,     // 30 seconds for non-streaming
+  streamingTimeout: 120000,  // 2 minutes for streaming
+  maxTimeout: 300000,        // 5 minutes absolute maximum
+  inactivityTimeout: 60000   // 1 minute inactivity timeout
+}))
 
 // Rate limiting
 app.use(rateLimit)
@@ -60,6 +67,7 @@ app.use(rateLimit)
 // Health check endpoints (before other routes)
 app.use('/health', healthRoutes)
 app.use('/v1/health', connectionHealthRoutes)
+app.use('/concurrency', concurrencyRoutes)
 
 // API routes
 app.use('/v1/chat/completions', chatRoutes)
