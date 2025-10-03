@@ -13,6 +13,7 @@ import { createUnifiedRequestTimeout } from './utils/unifiedTimeoutManager.js'
 import { concurrencyMonitor } from './utils/concurrencyMonitor.js'
 import { handleJsonParsingError } from './middleware/jsonValidator.js'
 import { healthMonitor } from './middleware/healthMonitor.js'
+import { createResponseManager } from './utils/responseManager.js'
 
 // Import routes
 import chatRoutes from './routes/chat.js'
@@ -46,6 +47,11 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
 // Health monitoring
 app.use(healthMonitor())
+// Response manager - must be before other middleware that might use res.end
+app.use((req, res, next) => {
+  req.responseManager = createResponseManager(res, req.id)
+  next()
+})
 
 // Logging middleware
 if (config.logging.enabled) {

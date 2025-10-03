@@ -150,25 +150,41 @@ export const createRateLimit = (options = {}) => {
         throw new RateLimitError('Rate limit exceeded')
       }
       
-      // Increment counter based on response
-      const originalEnd = res.end
-      res.end = function(chunk, encoding) {
-        if ((skipSuccessfulRequests && res.statusCode < 400) ||
-            (skipFailedRequests && res.statusCode >= 400)) {
-          // Don't count this request
-        } else {
-          data.count++
-        }
-        
-        // Update remaining count
-        const remaining = Math.max(0, maxRequests - data.count)
-        res.set('X-RateLimit-Remaining', remaining)
-        
-        // CRITICAL FIX: For streaming responses, don't pass parameters to end() if headers already sent
-        if (res.headersSent) {
-          originalEnd.call(this)
-        } else {
-          originalEnd.call(this, chunk, encoding)
+      // Use ResponseManager to increment counter based on response
+      if (req.responseManager) {
+        req.responseManager.onEnd((chunk, encoding) => {
+          if ((skipSuccessfulRequests && res.statusCode < 400) ||
+              (skipFailedRequests && res.statusCode >= 400)) {
+            // Don't count this request
+          } else {
+            data.count++
+          }
+          
+          // Update remaining count
+          const remaining = Math.max(0, maxRequests - data.count)
+          res.set('X-RateLimit-Remaining', remaining)
+        })
+      } else {
+        // Fallback to override res.end if ResponseManager not available
+        const originalEnd = res.end
+        res.end = function(chunk, encoding) {
+          if ((skipSuccessfulRequests && res.statusCode < 400) ||
+              (skipFailedRequests && res.statusCode >= 400)) {
+            // Don't count this request
+          } else {
+            data.count++
+          }
+          
+          // Update remaining count
+          const remaining = Math.max(0, maxRequests - data.count)
+          res.set('X-RateLimit-Remaining', remaining)
+          
+          // CRITICAL FIX: For streaming responses, don't pass parameters to end() if headers already sent
+          if (res.headersSent) {
+            originalEnd.call(this)
+          } else {
+            originalEnd.call(this, chunk, encoding)
+          }
         }
       }
       

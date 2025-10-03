@@ -3,6 +3,7 @@ import { translateQolabaToOpenAI, extractToolCalls } from './translator.js'
 import { config } from '../config/index.js'
 import { createResponseState, withStreamingErrorBoundary, SafeSSEWriter } from './responseState.js'
 import { concurrencyMonitor } from './concurrencyMonitor.js'
+import { createResponseManager } from './responseManager.js'
 
 /**
  * Unified timeout manager for streaming requests to prevent race conditions
@@ -106,6 +107,9 @@ export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayl
 
   // Create response state tracker
   const responseState = createResponseState(res, requestId)
+
+  // Use ResponseManager for coordinated response ending
+  const responseManager = req.responseManager || createResponseManager(res, requestId)
 
   // ENHANCEMENT: Use unified timeout manager instead of multiple competing systems
   const unifiedTimeoutManager = req.unifiedTimeoutManager || res.unifiedTimeoutManager
@@ -389,26 +393,36 @@ export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayl
       if (unifiedTimeoutManager) {
         unifiedTimeoutManager.updateActivity()
       }
-      
+
       await handleTermination('streaming_complete')
-      
+
       // Complete request in concurrency monitor
       concurrencyMonitor.completeRequest(requestId, 'completed', {
         responseLength: fullResponse.length,
         model: qolabaPayload.model
       })
-      
+
+      // Ensure ResponseManager is properly ended
+      if (responseManager && !responseManager.hasEnded()) {
+        responseManager.getOriginalEnd().call(res)
+      }
+
     } catch (error) {
       logger.warn('Streaming completion termination failed', {
         requestId,
         error: error.message
       })
-      
+
       // Still mark as completed even if termination failed
       concurrencyMonitor.completeRequest(requestId, 'completed_with_errors', {
         error: error.message,
         responseLength: fullResponse.length
       })
+
+      // Ensure ResponseManager is properly ended even on error
+      if (responseManager && !responseManager.hasEnded()) {
+        responseManager.getOriginalEnd().call(res)
+      }
     }
 
     // ENHANCEMENT: Cancel unified timeout manager if available
@@ -433,23 +447,33 @@ export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayl
     // CRITICAL FIX: Use coordinated termination for error handling
     try {
       await safeHandleTermination('streaming_error')
-      
+
       // Mark as failed in concurrency monitor
       concurrencyMonitor.completeRequest(requestId, 'error', {
         error: error.message
       })
-      
+
+      // Ensure ResponseManager is properly ended on error
+      if (responseManager && !responseManager.hasEnded()) {
+        responseManager.getOriginalEnd().call(res)
+      }
+
     } catch (terminationError) {
       logger.warn('Error termination failed', {
         requestId,
         error: terminationError.message
       })
-      
+
       // Still mark as failed even if termination failed
       concurrencyMonitor.completeRequest(requestId, 'error_termination_failed', {
         error: error.message,
         terminationError: terminationError.message
       })
+
+      // Ensure ResponseManager is properly ended even on termination error
+      if (responseManager && !responseManager.hasEnded()) {
+        responseManager.getOriginalEnd().call(res)
+      }
     }
 
     // ENHANCEMENT: Terminate unified timeout manager on error

@@ -41,67 +41,125 @@ export const healthMonitor = (options = {}) => {
       healthData.requests.streaming.total++
     }
 
-    // Track response completion
-    const originalEnd = res.end
-    res.end = function(chunk, encoding) {
-      const duration = Date.now() - startTime
-      
-      // Update health data
-      healthData.responseTimes.push(duration)
-      if (healthData.responseTimes.length > maxHistorySize) {
-        healthData.responseTimes.shift()
-      }
-
-      // Check for successful vs failed requests
-      if (res.statusCode >= 200 && res.statusCode < 400) {
-        healthData.requests.successful++
-        if (req.body?.stream === true) {
-          healthData.requests.streaming.successful++
-        }
-      } else {
-        healthData.requests.failed++
-        if (req.body?.stream === true) {
-          healthData.requests.streaming.errors++
-        }
+    // Use ResponseManager to track response completion instead of overriding res.end
+    if (req.responseManager) {
+      req.responseManager.onEnd((chunk, encoding) => {
+        const duration = Date.now() - startTime
         
-        // Log error for monitoring
-        healthData.errors.push({
-          timestamp: Date.now(),
-          requestId,
-          statusCode: res.statusCode,
-          duration,
-          method: req.method,
-          url: req.url
-        })
-        
-        if (healthData.errors.length > maxHistorySize) {
-          healthData.errors.shift()
+        // Update health data
+        healthData.responseTimes.push(duration)
+        if (healthData.responseTimes.length > maxHistorySize) {
+          healthData.responseTimes.shift()
         }
-      }
 
-      // Check for timeouts
-      if (duration > 30000) {
-        healthData.requests.timeouts++
-        logger.warn('Slow request detected', {
-          requestId,
-          method: req.method,
-          url: req.url,
-          duration: `${duration}ms`,
-          statusCode: res.statusCode
-        })
-      }
+        // Check for successful vs failed requests
+        if (res.statusCode >= 200 && res.statusCode < 400) {
+          healthData.requests.successful++
+          if (req.body?.stream === true) {
+            healthData.requests.streaming.successful++
+          }
+        } else {
+          healthData.requests.failed++
+          if (req.body?.stream === true) {
+            healthData.requests.streaming.errors++
+          }
+          
+          // Log error for monitoring
+          healthData.errors.push({
+            timestamp: Date.now(),
+            requestId,
+            statusCode: res.statusCode,
+            duration,
+            method: req.method,
+            url: req.url
+          })
+          
+          if (healthData.errors.length > maxHistorySize) {
+            healthData.errors.shift()
+          }
+        }
 
-      healthData.lastUpdate = Date.now()
-      healthData.circuitBreakerState = defaultCircuitBreaker.getState()
+        // Check for timeouts
+        if (duration > 30000) {
+          healthData.requests.timeouts++
+          logger.warn('Slow request detected', {
+            requestId,
+            method: req.method,
+            url: req.url,
+            duration: `${duration}ms`,
+            statusCode: res.statusCode
+          })
+        }
 
-      // Check for alerts
-      checkAlerts(healthData, alertThresholds, requestId)
+        healthData.lastUpdate = Date.now()
+        healthData.circuitBreakerState = defaultCircuitBreaker.getState()
 
-      // CRITICAL FIX: For streaming responses, don't pass parameters to end() if headers already sent
-      if (res.headersSent) {
-        originalEnd.call(this)
-      } else {
-        originalEnd.call(this, chunk, encoding)
+        // Check for alerts
+        checkAlerts(healthData, alertThresholds, requestId)
+      })
+    } else {
+      // Fallback to override res.end if ResponseManager not available
+      const originalEnd = res.end
+      res.end = function(chunk, encoding) {
+        const duration = Date.now() - startTime
+        
+        // Update health data
+        healthData.responseTimes.push(duration)
+        if (healthData.responseTimes.length > maxHistorySize) {
+          healthData.responseTimes.shift()
+        }
+
+        // Check for successful vs failed requests
+        if (res.statusCode >= 200 && res.statusCode < 400) {
+          healthData.requests.successful++
+          if (req.body?.stream === true) {
+            healthData.requests.streaming.successful++
+          }
+        } else {
+          healthData.requests.failed++
+          if (req.body?.stream === true) {
+            healthData.requests.streaming.errors++
+          }
+          
+          // Log error for monitoring
+          healthData.errors.push({
+            timestamp: Date.now(),
+            requestId,
+            statusCode: res.statusCode,
+            duration,
+            method: req.method,
+            url: req.url
+          })
+          
+          if (healthData.errors.length > maxHistorySize) {
+            healthData.errors.shift()
+          }
+        }
+
+        // Check for timeouts
+        if (duration > 30000) {
+          healthData.requests.timeouts++
+          logger.warn('Slow request detected', {
+            requestId,
+            method: req.method,
+            url: req.url,
+            duration: `${duration}ms`,
+            statusCode: res.statusCode
+          })
+        }
+
+        healthData.lastUpdate = Date.now()
+        healthData.circuitBreakerState = defaultCircuitBreaker.getState()
+
+        // Check for alerts
+        checkAlerts(healthData, alertThresholds, requestId)
+
+        // CRITICAL FIX: For streaming responses, don't pass parameters to end() if headers already sent
+        if (res.headersSent) {
+          originalEnd.call(this)
+        } else {
+          originalEnd.call(this, chunk, encoding)
+        }
       }
     }
 
