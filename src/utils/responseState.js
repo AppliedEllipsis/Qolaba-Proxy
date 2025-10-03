@@ -111,7 +111,12 @@
           if (self.isStreaming && !self.streamingCompleted) {
             self.streamingCompleted = true
           }
-          return self.originalEnd.apply(this, args)
+          // CRITICAL FIX: For streaming responses, don't pass args to end() if headers already sent
+          if (self.isHeadersSent) {
+            return self.originalEnd.call(this)
+          } else {
+            return self.originalEnd.apply(this, args)
+          }
         }
         return false
       }
@@ -232,7 +237,12 @@
     safeEnd(data) {
       try {
         if (this.res.canWrite()) {
-          this.res.end(data)
+          // CRITICAL FIX: For streaming responses, don't pass data to end() if headers already sent
+          if (this.isHeadersSent) {
+            this.res.end()
+          } else {
+            this.res.end(data)
+          }
           return true
         }
         return false
