@@ -246,41 +246,39 @@
         stack: error.stack
       })
   
- -    // Try to send error response if possible
- -    if (responseState.res.canWriteHeaders()) {
- +    // If the response headers have already been sent or the response ended,
- +    // skip attempting to write headers to avoid "Cannot set headers" errors.
- +    if (responseState.res.headersSent || responseState.res.writableEnded) {
- +      logger.info('Streaming error boundary bypassed due to headers already sent or response ended', {
- +        requestId: responseState.requestId,
- +        error: error.message
- +      })
- +      // Do not attempt to write a new error response
- +    } else if (responseState.res.canWriteHeaders()) {
-        try {
-          responseState.safeWriteHeaders(500, {
-            'Content-Type': 'application/json',
-            'Connection': 'close'
-          })
-          
-          const errorResponse = {
-            error: {
-              message: 'Internal streaming error',
-              type: 'api_error',
-              code: 'streaming_error'
-            }
+    // Try to send error response if possible
+    // If the response headers have already been sent or the response ended,
+    // skip attempting to write headers to avoid "Cannot set headers" errors.
+    if (responseState.res.headersSent || responseState.res.writableEnded) {
+      logger.info('Streaming error boundary bypassed due to headers already sent or response ended', {
+        requestId: responseState.requestId,
+        error: error.message
+      })
+      // Do not attempt to write a new error response
+    } else if (responseState.res.canWriteHeaders()) {
+      try {
+        responseState.safeWriteHeaders(500, {
+          'Content-Type': 'application/json',
+          'Connection': 'close'
+        })
+        
+        const errorResponse = {
+          error: {
+            message: 'Internal streaming error',
+            type: 'api_error',
+            code: 'streaming_error'
           }
-          
-          responseState.safeWrite(JSON.stringify(errorResponse))
-          responseState.safeEnd()
-        } catch (writeError) {
-          logger.error('Failed to send error response in stream', {
-            requestId: responseState.requestId,
-            error: writeError.message
-          })
         }
- -    }
- +    }
+        
+        responseState.safeWrite(JSON.stringify(errorResponse))
+        responseState.safeEnd()
+      } catch (writeError) {
+        logger.error('Failed to send error response in stream', {
+          requestId: responseState.requestId,
+          error: writeError.message
+        })
+      }
+    }
   
       // Call custom error handler if provided
       if (errorHandler) {
