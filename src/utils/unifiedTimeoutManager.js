@@ -62,6 +62,46 @@ export class UnifiedTimeoutManager {
   }
 
   /**
+   * Register streaming error handler for timeout scenarios
+   */
+  registerStreamingErrorHandler(handler) {
+    if (this.isTerminated) return false
+    
+    this._streamingErrorHandler = handler
+    logger.debug('Streaming error handler registered', {
+      requestId: this.requestId
+    })
+    return true
+  }
+
+  /**
+   * Handle streaming timeout with proper error message delivery
+   */
+  async handleStreamingTimeout(reason = 'timeout', responseState = null, model = null) {
+    logger.warn('Handling streaming timeout', {
+      requestId: this.requestId,
+      reason,
+      hasResponseState: !!responseState,
+      model
+    })
+
+    if (this._streamingErrorHandler && responseState) {
+      try {
+        await this._streamingErrorHandler(reason)
+      } catch (error) {
+        logger.error('Streaming error handler failed', {
+          requestId: this.requestId,
+          reason,
+          error: error.message
+        })
+      }
+    }
+
+    // Terminate the timeout manager
+    await this.terminate(reason)
+  }
+
+  /**
    * Set a timeout with proper coordination and race condition prevention
    */
   setTimeout(callback, delayMs, name = 'default', options = {}) {
@@ -192,6 +232,12 @@ export class UnifiedTimeoutManager {
           requestId: this.requestId,
           requestType
         })
+        
+        // ENHANCEMENT: Handle streaming timeout errors with proper error messages
+        if (requestType === 'streaming' && this._streamingErrorHandler) {
+          await this._streamingErrorHandler('base_timeout')
+        }
+        
         await this.terminate('base_timeout')
       }
     })
@@ -205,6 +251,12 @@ export class UnifiedTimeoutManager {
           logger.warn('Streaming timeout reached', {
             requestId: this.requestId
           })
+          
+          // ENHANCEMENT: Handle streaming timeout errors with proper error messages
+          if (this._streamingErrorHandler) {
+            await this._streamingErrorHandler('streaming_timeout')
+          }
+          
           await this.terminate('streaming_timeout')
         }
       })
@@ -220,6 +272,12 @@ export class UnifiedTimeoutManager {
               requestId: this.requestId,
               inactivity
             })
+            
+            // ENHANCEMENT: Handle inactivity timeout errors with proper error messages
+            if (this._streamingErrorHandler) {
+              await this._streamingErrorHandler('inactivity_timeout')
+            }
+            
             await this.terminate('inactivity_timeout')
           } else {
             // Reschedule if there was recent activity

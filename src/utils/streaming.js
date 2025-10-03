@@ -111,6 +111,14 @@ export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayl
   const unifiedTimeoutManager = req.unifiedTimeoutManager || res.unifiedTimeoutManager
   if (unifiedTimeoutManager) {
     logger.debug('Using unified timeout manager for streaming', { requestId })
+    
+    // ENHANCEMENT: Register streaming error handler for timeout scenarios
+    const streamingErrorHandler = async (reason) => {
+      await handleTimeoutError(responseState, qolabaPayload.model, reason)
+    }
+    
+    unifiedTimeoutManager.registerStreamingErrorHandler(streamingErrorHandler)
+    
     // Update activity to prevent premature timeouts
     unifiedTimeoutManager.updateActivity()
   } else {
@@ -547,8 +555,153 @@ export async function handleNonStreamingResponse(res, qolabaClient, qolabaPayloa
 
 // Generate chunk ID for streaming responses
 function generateChunkId() {
-  return 'chatcmpl-' + Math.random().toString(36).substring(2, 15) + 
+  return 'chatcmpl-' + Math.random().toString(36).substring(2, 15) +
          Math.random().toString(36).substring(2, 15)
+}
+
+/**
+ * Create OpenAI-compliant timeout error chunk for streaming responses
+ */
+export function createTimeoutErrorChunk(requestId, model, message = 'Request timeout') {
+  return {
+    id: generateChunkId(),
+    object: 'chat.completion.chunk',
+    created: Math.floor(Date.now() / 1000),
+    model: model || 'gpt-4.1-mini-2025-04-14',
+    choices: [
+      {
+        index: 0,
+        delta: {},
+        finish_reason: 'error'
+      }
+    ],
+    error: {
+      message,
+      type: 'api_error',
+      code: 'timeout'
+    }
+  }
+}
+
+/**
+ * Create OpenAI-compliant timeout error response for HTTP responses
+ */
+export function createTimeoutErrorResponse(requestId, message = 'Request timeout') {
+  return {
+    error: {
+      message,
+      type: 'api_error',
+      code: 'timeout',
+      request_id: requestId
+    }
+  }
+}
+
+/**
+ * Send timeout error as streaming chunk (if streaming headers already sent)
+ */
+export function sendTimeoutErrorStreaming(responseState, model, message = 'Request timeout') {
+  if (!responseState.res.canWrite()) {
+    logger.debug('Cannot send timeout error streaming chunk - response cannot write', {
+      requestId: responseState.requestId
+    })
+    return false
+  }
+
+  try {
+    const errorChunk = createTimeoutErrorChunk(responseState.requestId, model, message)
+    const sseWriter = new SafeSSEWriter(responseState)
+    
+    const success = sseWriter.writeEvent(errorChunk)
+    if (success) {
+      sseWriter.writeDone()
+      logger.info('Sent timeout error as streaming chunk', {
+        requestId: responseState.requestId,
+        model
+      })
+      return true
+    } else {
+      logger.warn('Failed to write timeout error streaming chunk', {
+        requestId: responseState.requestId
+      })
+      return false
+    }
+  } catch (error) {
+    logger.error('Error sending timeout error streaming chunk', {
+      requestId: responseState.requestId,
+      error: error.message
+    })
+    return false
+  }
+}
+
+/**
+ * Send timeout error as HTTP response (if headers not sent)
+ */
+export function sendTimeoutErrorHttp(res, requestId, message = 'Request timeout') {
+  try {
+    if (res.headersSent || res.writableEnded) {
+      logger.debug('Cannot send timeout error HTTP response - headers already sent', {
+        requestId
+      })
+      return false
+    }
+
+    const errorResponse = createTimeoutErrorResponse(requestId, message)
+    res.status(408).json(errorResponse)
+    
+    logger.info('Sent timeout error as HTTP response', {
+      requestId
+    })
+    return true
+  } catch (error) {
+    logger.error('Error sending timeout error HTTP response', {
+      requestId,
+      error: error.message
+    })
+    return false
+  }
+}
+
+/**
+ * Handle timeout error with hybrid approach - try streaming first, fallback to HTTP
+ */
+export async function handleTimeoutError(responseState, model, reason = 'timeout') {
+  const message = reason === 'base_timeout' ? 'Request timeout' :
+                  reason === 'streaming_timeout' ? 'Streaming timeout' :
+                  reason === 'inactivity_timeout' ? 'Request timeout due to inactivity' :
+                  'Request timeout'
+
+  logger.warn('Handling timeout error with hybrid approach', {
+    requestId: responseState.requestId,
+    reason,
+    headersSent: responseState.isHeadersSent,
+    canWriteHeaders: responseState.res.canWriteHeaders(),
+    canWrite: responseState.res.canWrite()
+  })
+
+  // Try streaming error first if headers already sent
+  if (responseState.isHeadersSent && responseState.res.canWrite()) {
+    const streamingSuccess = sendTimeoutErrorStreaming(responseState, model, message)
+    if (streamingSuccess) {
+      return true
+    }
+  }
+
+  // Fallback to HTTP error if streaming failed or headers not sent
+  if (responseState.res.canWriteHeaders()) {
+    const httpSuccess = sendTimeoutErrorHttp(responseState.res, responseState.requestId, message)
+    if (httpSuccess) {
+      return true
+    }
+  }
+
+  // If both methods failed, log and proceed with termination
+  logger.warn('Both streaming and HTTP timeout error delivery failed, proceeding with termination', {
+    requestId: responseState.requestId,
+    reason
+  })
+  return false
 }
 
 // Extract and handle tool calls from streaming response
@@ -587,5 +740,10 @@ export default {
   handleStreamingResponse,
   handleNonStreamingResponse,
   extractToolCallsFromStream,
-  createToolCallChunk
+  createToolCallChunk,
+  createTimeoutErrorChunk,
+  createTimeoutErrorResponse,
+  sendTimeoutErrorStreaming,
+  sendTimeoutErrorHttp,
+  handleTimeoutError
 }
