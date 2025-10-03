@@ -15,6 +15,11 @@
       this.isStreaming = false
       this.streamingCompleted = false
       
+      // CRITICAL FIX: Add termination coordination to prevent race conditions
+      this.isTerminationInProgress = false
+      this.terminationLock = Promise.resolve()
+      this.terminationReason = null
+      
       // Store original methods
       this.originalWrite = res.write
       this.originalEnd = res.end
@@ -183,6 +188,85 @@
     }
   
     /**
+     * CRITICAL FIX: Coordinated termination to prevent race conditions
+     */
+    async coordinatedTermination(reason = 'unknown') {
+      // If termination is already in progress, wait for it to complete
+      if (this.isTerminationInProgress) {
+        logger.debug('Termination already in progress, waiting', {
+          requestId: this.requestId,
+          currentReason: this.terminationReason,
+          newReason: reason
+        })
+        await this.terminationLock
+        return
+      }
+
+      // Mark termination as in progress
+      this.isTerminationInProgress = true
+      this.terminationReason = reason
+      
+      logger.debug('Starting coordinated termination', {
+        requestId: this.requestId,
+        reason
+      })
+
+      // Create a new termination lock
+      this.terminationLock = this._performTermination(reason)
+      
+      try {
+        await this.terminationLock
+      } catch (error) {
+        logger.warn('Error during coordinated termination', {
+          requestId: this.requestId,
+          reason,
+          error: error.message
+        })
+      } finally {
+        this.isTerminationInProgress = false
+      }
+    }
+
+    /**
+     * Internal method to perform the actual termination
+     */
+    async _performTermination(reason) {
+      try {
+        // Only try to end response if it hasn't been ended yet
+        if (!this.isEnded && this.res.canWrite()) {
+          logger.debug('Ending response during coordinated termination', {
+            requestId: this.requestId,
+            reason
+          })
+          this.safeEnd()
+        } else {
+          logger.debug('Skipping response end - already ended or cannot write', {
+            requestId: this.requestId,
+            isEnded: this.isEnded,
+            canWrite: this.res.canWrite()
+          })
+        }
+
+        // Mark streaming as completed if it was streaming
+        if (this.isStreaming && !this.streamingCompleted) {
+          this.streamingCompleted = true
+          logger.debug('Marked streaming as completed during termination', {
+            requestId: this.requestId,
+            reason
+          })
+        }
+
+      } catch (error) {
+        logger.error('Error during termination execution', {
+          requestId: this.requestId,
+          reason,
+          error: error.message
+        })
+        throw error
+      }
+    }
+
+    /**
      * Force destroy the response state
      */
     destroy() {
@@ -199,6 +283,24 @@
             error: error.message
           })
         }
+      }
+    }
+
+    /**
+     * Check if termination can proceed
+     */
+    canTerminate() {
+      return !this.isTerminationInProgress && !this.isDestroyed
+    }
+
+    /**
+     * Get termination state information
+     */
+    getTerminationState() {
+      return {
+        isTerminationInProgress: this.isTerminationInProgress,
+        terminationReason: this.terminationReason,
+        canTerminate: this.canTerminate()
       }
     }
   
@@ -234,7 +336,7 @@
   }
   
   /**
-   * Error boundary wrapper for streaming responses
+   * CRITICAL FIX: Improved error boundary with coordinated termination
    */
   export async function withStreamingErrorBoundary(fn, responseState, errorHandler) {
     try {
@@ -246,16 +348,18 @@
         stack: error.stack
       })
   
-    // Try to send error response if possible
-    // If the response headers have already been sent or the response ended,
-    // skip attempting to write headers to avoid "Cannot set headers" errors.
-    if (responseState.res.headersSent || responseState.res.writableEnded) {
-      logger.info('Streaming error boundary bypassed due to headers already sent or response ended', {
+    // CRITICAL FIX: Use coordinated termination to prevent race conditions
+    try {
+      await responseState.coordinatedTermination('error_boundary')
+    } catch (terminationError) {
+      logger.warn('Coordinated termination failed in error boundary', {
         requestId: responseState.requestId,
-        error: error.message
+        error: terminationError.message
       })
-      // Do not attempt to write a new error response
-    } else if (responseState.res.canWriteHeaders()) {
+    }
+  
+    // Try to send error response only if headers haven't been sent and response hasn't ended
+    if (responseState.res.canWriteHeaders()) {
       try {
         responseState.safeWriteHeaders(500, {
           'Content-Type': 'application/json',
@@ -278,6 +382,12 @@
           error: writeError.message
         })
       }
+    } else {
+      logger.debug('Skipping error response - headers already sent or response ended', {
+        requestId: responseState.requestId,
+        headersSent: responseState.res.headersSent,
+        writableEnded: responseState.res.writableEnded
+      })
     }
   
       // Call custom error handler if provided
@@ -292,7 +402,7 @@
         }
       }
   
-      // Ensure response is destroyed
+      // Force destroy as last resort
       responseState.destroy()
       throw error
     }

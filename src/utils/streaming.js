@@ -3,81 +3,51 @@ import { translateQolabaToOpenAI, extractToolCalls } from './translator.js'
 import { config } from '../config/index.js'
 import { createResponseState, withStreamingErrorBoundary, SafeSSEWriter } from './responseState.js'
 
-// Handle streaming response
+// CRITICAL FIX: Improved streaming response handler with coordinated termination
 export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayload, requestId) {
-  // Create response state tracker
-  const responseState = createResponseState(res, requestId)
+// Create response state tracker
+const responseState = createResponseState(res, requestId)
 
-  // Clear the request timeout for streaming requests to prevent conflicts
-  if (req.timeoutRef) {
-    clearTimeout(req.timeoutRef)
-    req.timeoutRef = null
-    logger.debug('Cleared request timeout for streaming', { requestId })
-  }
+// Clear the request timeout for streaming requests to prevent conflicts
+if (req.timeoutRef) {
+  clearTimeout(req.timeoutRef)
+  req.timeoutRef = null
+  logger.debug('Cleared request timeout for streaming', { requestId })
+}
 
-  // Track streaming completion to prevent double termination
-  let isStreamCompleted = false
-  let isResponseEnded = false
+// CRITICAL FIX: Replace local variables with response state tracking
+let cleanupTimeoutRef = null
 
-  // Add abort controller for request cancellation
-  const abortController = new AbortController()
-  const timeoutRef = setTimeout(() => {
-    abortController.abort()
-    // CRITICAL FIX: Force response termination on timeout to prevent hanging
-    logger.warn('Streaming timeout reached, forcing response termination', { requestId })
-    forceResponseTermination(responseState, timeoutRef, abortController, requestId)
-  }, 30000) // Reduced to 30 seconds for more aggressive cleanup
+// Add abort controller for request cancellation
+const abortController = new AbortController()
+
+// CRITICAL FIX: Replace forceResponseTermination with coordinated termination
+const handleTimeout = () => {
+  logger.warn('Streaming timeout reached, initiating coordinated termination', { requestId })
+  responseState.coordinatedTermination('timeout').catch(error => {
+    logger.warn('Coordinated timeout termination failed', {
+      requestId,
+      error: error.message
+    })
+  })
+}
+
+// Set timeout with proper cleanup
+cleanupTimeoutRef = setTimeout(handleTimeout, 30000)
+
+// Enhanced disconnect detection
+let isClientDisconnected = false
   
-  // Enhanced disconnect detection
-  let isClientDisconnected = false
-  
-  // Helper function to safely end response and force cleanup
-  const forceResponseTermination = (responseState, timeoutRef, abortController, requestId) => {
-    if (isResponseEnded) {
-      logger.debug('Response already ended, skipping termination', { requestId })
-      return
-    }
-
-    isResponseEnded = true
-    
-    // Clear timeout first
-    if (timeoutRef) {
-      clearTimeout(timeoutRef)
-    }
-    
-    // Abort any ongoing operations
-    if (abortController) {
-      abortController.abort()
-    }
-    
-    // Force end the response if it hasn't been ended
-    if (responseState.res.canWrite()) {
-      try {
-        logger.debug('Force ending streaming response', { requestId })
-        responseState.safeEnd()
-      } catch (error) {
-        logger.warn('Failed to force end response', {
-          requestId,
-          error: error.message
-        })
-      }
-    }
-    
-    // Force destroy the response state and underlying connection
-    responseState.destroy()
-    
-    // Force close the underlying socket if it exists
-    if (res.socket && !res.socket.destroyed) {
-      try {
-        res.socket.destroy()
-        logger.debug('Forced socket closure', { requestId })
-      } catch (socketError) {
-        logger.warn('Failed to destroy socket', {
-          requestId,
-          error: socketError.message
-        })
-      }
-    }
+  // CRITICAL FIX: Replace forceResponseTermination with coordinated termination handler
+  const handleTermination = (reason) => {
+    logger.debug('Initiating termination', { requestId, reason })
+    responseState.coordinatedTermination(reason).catch(error => {
+      logger.warn('Coordinated termination failed', {
+        requestId,
+        reason,
+        error: error.message
+      })
+    })
   }
   
   // Handle response errors
@@ -90,7 +60,7 @@ export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayl
     
     if (!isClientDisconnected) {
       abortController.abort()
-      forceResponseTermination(responseState, timeoutRef, abortController, requestId)
+      handleTermination('response_error')
     }
   }
 
@@ -108,13 +78,16 @@ export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayl
     logger.info('Client disconnected during streaming', { requestId })
     isClientDisconnected = true
     abortController.abort()
-    forceResponseTermination(responseState, timeoutRef, abortController, requestId)
+    handleTermination('client_disconnect')
   }
 
   // Listen for client disconnect
   res.on('close', handleClientDisconnect)
   res.on('finish', () => {
-    clearTimeout(timeoutRef)
+    // Clear cleanup timeout
+    if (cleanupTimeoutRef) {
+      clearTimeout(cleanupTimeoutRef)
+    }
     // Clear any remaining request timeout
     if (req.timeoutRef) {
       clearTimeout(req.timeoutRef)
@@ -207,29 +180,13 @@ export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayl
       model: qolabaPayload.model
     })
 
-    // CRITICAL FIX: Properly end the response to prevent hanging
-    if (!isResponseEnded && responseState.res.canWrite()) {
-      isResponseEnded = true
-      logger.debug('Ending streaming response', { requestId })
-      responseState.safeEnd()
-      
-      // CRITICAL FIX: Force connection cleanup immediately after ending
-      setTimeout(() => {
-        if (res.socket && !res.socket.destroyed) {
-          try {
-            res.socket.destroy()
-            logger.debug('Forced connection cleanup after successful streaming', { requestId })
-          } catch (error) {
-            logger.warn('Failed to cleanup connection after streaming', {
-              requestId,
-              error: error.message
-            })
-          }
-        }
-      }, 100) // Small delay to ensure response is sent
-    } else {
-      logger.warn('Response already ended or destroyed, skipping end()', { requestId })
-    }
+    // CRITICAL FIX: Use coordinated termination to prevent race conditions
+    handleTermination('streaming_complete').catch(error => {
+      logger.warn('Streaming completion termination failed', {
+        requestId,
+        error: error.message
+      })
+    })
 
   }, responseState, async (error, responseState) => {
     // Custom error handler for streaming
@@ -238,8 +195,18 @@ export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayl
       error: error.message
     })
 
-    // CRITICAL FIX: Only try to send error response if response hasn't been ended
-    if (!isResponseEnded && responseState.res.canWrite()) {
+    // CRITICAL FIX: Use coordinated termination for error handling
+    try {
+      await responseState.coordinatedTermination('streaming_error')
+    } catch (terminationError) {
+      logger.warn('Error termination failed', {
+        requestId,
+        error: terminationError.message
+      })
+    }
+
+    // Try to send error response only if headers haven't been sent and response hasn't ended
+    if (responseState.res.canWriteHeaders()) {
       const errorChunk = {
         id: generateChunkId(),
         object: 'chat.completion.chunk',
@@ -262,21 +229,9 @@ export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayl
       sseWriter.writeEvent(errorChunk)
       sseWriter.writeDone()
       
-      // CRITICAL FIX: Mark as ended and properly terminate
-      isResponseEnded = true
-      if (responseState.res.canWrite()) {
-        logger.debug('Ending streaming response after error', { requestId })
-        responseState.safeEnd()
-      }
-      
-      // Force cleanup after error
-      setTimeout(() => {
-        forceResponseTermination(responseState, timeoutRef, abortController, requestId)
-      }, 50)
+      logger.debug('Sent error streaming response', { requestId })
     } else {
-      logger.debug('Skipping error response - response already ended', { requestId })
-      // Just force cleanup without sending error response
-      forceResponseTermination(responseState, timeoutRef, abortController, requestId)
+      logger.debug('Skipping error response - headers already sent or response ended', { requestId })
     }
   })
 }
