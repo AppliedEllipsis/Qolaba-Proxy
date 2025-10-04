@@ -306,7 +306,7 @@ export class ManualTestScript {
   async makeStreamingRequest(payload, options = {}) {
     const url = `${this.baseUrl}/v1/chat/completions`
     
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       const chunks = []
       let response
       
@@ -320,8 +320,13 @@ export class ManualTestScript {
           ...options
         }
         
-        const httpModule = url.startsWith('https:') ? (await import('https')).default : (await import('http')).default
-        const req = httpModule.request(url, requestOptions, (res) => {
+        let httpModule;
+        if (url.startsWith('https:')) {
+          httpModule = await import('https');
+        } else {
+          httpModule = await import('http');
+        }
+        const req = httpModule.default.request(url, requestOptions, (res) => {
           response = res
           
           if (res.statusCode !== 200) {
@@ -363,10 +368,15 @@ export class ManualTestScript {
   async makeNonStreamingRequest(payload) {
     const url = `${this.baseUrl}/v1/chat/completions`
     
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       try {
-        const httpModule = url.startsWith('https:') ? (await import('https')).default : (await import('http')).default
-        const req = httpModule.request(url, {
+        let httpModule;
+        if (url.startsWith('https:')) {
+          httpModule = await import('https');
+        } else {
+          httpModule = await import('http');
+        }
+        const req = httpModule.default.request(url, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -409,10 +419,15 @@ export class ManualTestScript {
   async makeHealthCheckRequest() {
     const url = `${this.baseUrl}/health`
     
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       try {
-        const httpModule = url.startsWith('https:') ? (await import('https')).default : (await import('http')).default
-        const req = httpModule.request(url, (res) => {
+        let httpModule;
+        if (url.startsWith('https:')) {
+          httpModule = await import('https');
+        } else {
+          httpModule = await import('http');
+        }
+        const req = httpModule.default.request(url, (res) => {
           let data = ''
           
           res.on('data', (chunk) => {
