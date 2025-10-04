@@ -100,14 +100,42 @@ CONCURRENT_REQUESTS_LIMIT=100
 
 The proxy automatically maps OpenAI model names to Qolaba models:
 
+#### OpenAI Models
 | OpenAI Model | Qolaba LLM | Qolaba Model |
 |-------------|------------|-------------|
 | `gpt-4.1-mini-2025-04-14` | OpenAI | gpt-4.1-mini-2025-04-14 |
 | `gpt-4.1-2025-04-14` | OpenAI | gpt-4.1-2025-04-14 |
 | `gpt-4o-mini` | OpenAI | gpt-4o-mini |
-| `claude-3-5-sonnet-20241022` | ClaudeAI | claude-3-7-sonnet-latest |
-| `gemini-1.5-pro` | GeminiAI | gemini-2.5-pro |
-| `gemini-1.5-flash` | GeminiAI | gemini-2.5-flash |
+| `gpt-4o` | OpenAI | gpt-4o |
+| `o3-mini` | OpenAI | o3-mini |
+| `o1` | OpenAI | o1 |
+| `o3` | OpenAI | o3 |
+| `o4-mini-2025-04-16` | OpenAI | o4-mini-2025-04-16 |
+
+#### ClaudeAI Models
+| OpenAI Model | Qolaba LLM | Qolaba Model |
+|-------------|------------|-------------|
+| `claude-3-7-sonnet-latest` | ClaudeAI | claude-3-7-sonnet-latest |
+| `claude-opus-4-20250514` | ClaudeAI | claude-opus-4-20250514 |
+| `claude-sonnet-4-20250514` | ClaudeAI | claude-sonnet-4-20250514 |
+
+#### GeminiAI Models
+| OpenAI Model | Qolaba LLM | Qolaba Model |
+|-------------|------------|-------------|
+| `gemini-2.5-pro` | GeminiAI | gemini-2.5-pro |
+| `gemini-2.5-flash` | GeminiAI | gemini-2.5-flash |
+
+#### OpenRouterAI Models
+| OpenAI Model | Qolaba LLM | Qolaba Model |
+|-------------|------------|-------------|
+| `x-ai/grok-3-beta` | OpenRouterAI | x-ai/grok-3-beta |
+| `x-ai/grok-3-mini-beta` | OpenRouterAI | x-ai/grok-3-mini-beta |
+| `perplexity/sonar-pro` | OpenRouterAI | perplexity/sonar-pro |
+| `perplexity/sonar-reasoning-pro` | OpenRouterAI | perplexity/sonar-reasoning-pro |
+| `perplexity/sonar-reasoning` | OpenRouterAI | perplexity/sonar-reasoning |
+| `perplexity/sonar-deep-research` | OpenRouterAI | perplexity/sonar-deep-research |
+| `deepseek/deepseek-chat` | OpenRouterAI | deepseek/deepseek-chat |
+| `deepseek/deepseek-r1` | OpenRouterAI | deepseek/deepseek-r1 |
 
 ## 📡 API Endpoints
 
