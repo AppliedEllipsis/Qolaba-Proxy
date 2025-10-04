@@ -412,8 +412,11 @@ export const requestLogger = (req, res, next) => {
     })
     
     // CRITICAL FIX: For streaming responses, don't pass parameters to end() if headers already sent
-    if (res.headersSent) {
-      originalEnd.call(this)
+    // Also don't call end() if the response has already ended
+    if (res.headersSent || res.writableEnded) {
+      if (!res.writableEnded) {
+        originalEnd.call(this)
+      }
     } else {
       originalEnd.call(this, chunk, encoding)
     }

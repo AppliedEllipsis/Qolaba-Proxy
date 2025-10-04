@@ -171,44 +171,36 @@ export class ResponseManager {
           })
           callback()
         } catch (error) {
-          // ENHANCEMENT: Prevent header setting in end callbacks after headers are already sent
-          if (!self.areHeadersSent()) {
-            // Enhanced error logging with detailed context
-            logDetailedError(error, {
-              requestId: self.requestId,
-              method: 'end_callback',
-              url: 'response_manager',
-              responseState: {
-                headersSent: self.areHeadersSent(),
-                ended: self.isEnded,
-                writable: self.res.writable
-              },
-              additionalInfo: {
-                callbackIndex: self.endCallbacks.indexOf(callback),
-                totalCallbacks: self.endCallbacks.length,
-                callbackType: 'end_callback'
-              }
-            })
-            
-            logger.error('End callback failed', {
-              requestId: self.requestId,
-              error: error.message,
-              headersSent: self.areHeadersSent()
-            })
-            
-            // If headers are already sent, we can't send a new error response.
-            // The response is already being written, so we just log the callback failure.
-            if (!self.areHeadersSent()) {
-              // Re-throw to be caught by the global error handler if response hasn't started
-              throw error
+          // CRITICAL FIX: Always suppress end callback errors to prevent "Cannot set headers after they are sent"
+          // The response is already being written, so we just log the callback failure.
+          // Enhanced error logging with detailed context
+          logDetailedError(error, {
+            requestId: self.requestId,
+            method: 'end_callback',
+            url: 'response_manager',
+            responseState: {
+              headersSent: self.areHeadersSent(),
+              ended: self.isEnded,
+              writable: self.res.writable
+            },
+            additionalInfo: {
+              callbackIndex: self.endCallbacks.indexOf(callback),
+              totalCallbacks: self.endCallbacks.length,
+              callbackType: 'end_callback',
+              suppressed: true
             }
-          } else {
-            // Just log the error but don't re-throw if headers are already sent
-            logger.warn('End callback failed after headers sent, suppressing', {
-              requestId: self.requestId,
-              error: error.message
-            })
-          }
+          })
+          
+          logger.warn('End callback failed, suppressing to prevent response corruption', {
+            requestId: self.requestId,
+            error: error.message,
+            headersSent: self.areHeadersSent(),
+            // DIAGNOSTIC: Add stack trace to identify what's causing the error
+            stack: error.stack?.split('\n').slice(0, 5).join('\n')
+          })
+          
+          // CRITICAL FIX: Never re-throw end callback errors as they can corrupt the response
+          // This prevents "Cannot set headers after they are sent to the client" errors
         }
       }
 

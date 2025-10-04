@@ -2,6 +2,7 @@ import axios from 'axios'
 
 // Test script to validate the debug fixes
 const API_BASE_URL = 'http://localhost:3000'
+const TEST_API_KEY = 'your-test-api-key-here'
 
 async function testStreamingRequest() {
   console.log('Testing streaming request with debug fixes...')
@@ -16,7 +17,7 @@ async function testStreamingRequest() {
     }, {
       responseType: 'stream',
       headers: {
-        'Authorization': 'Bearer test-key',
+        'Authorization': `Bearer ${TEST_API_KEY}`,
         'Content-Type': 'application/json'
       }
     })
@@ -69,7 +70,7 @@ async function testNonStreamingRequest() {
       stream: false
     }, {
       headers: {
-        'Authorization': 'Bearer test-key',
+        'Authorization': `Bearer ${TEST_API_KEY}`,
         'Content-Type': 'application/json'
       }
     })

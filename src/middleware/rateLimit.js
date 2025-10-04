@@ -162,7 +162,11 @@ export const createRateLimit = (options = {}) => {
           
           // Update remaining count
           const remaining = Math.max(0, maxRequests - data.count)
-          res.set('X-RateLimit-Remaining', remaining)
+          
+          // CRITICAL FIX: Check if headers are already sent before trying to set them
+          if (!res.headersSent) {
+            res.set('X-RateLimit-Remaining', remaining)
+          }
         })
       } else {
         // Fallback to override res.end if ResponseManager not available
@@ -177,7 +181,11 @@ export const createRateLimit = (options = {}) => {
           
           // Update remaining count
           const remaining = Math.max(0, maxRequests - data.count)
-          res.set('X-RateLimit-Remaining', remaining)
+          
+          // CRITICAL FIX: Check if headers are already sent before trying to set them
+          if (!res.headersSent) {
+            res.set('X-RateLimit-Remaining', remaining)
+          }
           
           // CRITICAL FIX: For streaming responses, don't pass parameters to end() if headers already sent
           if (res.headersSent) {
