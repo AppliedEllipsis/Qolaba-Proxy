@@ -19,7 +19,7 @@ router.get('/',
       })
 
       // Get available models from configuration
-      const availableModels = Object.entries(config.modelMappings)
+      let availableModels = Object.entries(config.modelMappings)
         .filter(([key]) => key !== 'default')
         .map(([modelId, modelConfig]) => ({
           id: modelId,
@@ -30,6 +30,25 @@ router.get('/',
           root: modelId,
           parent: null
         }))
+
+      // Fallback: if no models are configured (edge-case), populate with default model
+      if (availableModels.length === 0) {
+        const defaultModelId = config.models.default
+        const defaultModelConfig = config.modelMappings[defaultModelId] || {
+          provider: 'OpenAI',
+          llm: 'OpenAI',
+          llm_model: defaultModelId
+        }
+        availableModels = [{
+          id: defaultModelId,
+          object: 'model',
+          created: Date.now(),
+          owned_by: (defaultModelConfig.provider || 'OpenAI').toLowerCase(),
+          permission: [],
+          root: defaultModelId,
+          parent: null
+        }]
+      }
 
       const response = {
         object: 'list',
