@@ -39,14 +39,19 @@ export class ResponseManager {
       // Execute all end callbacks AFTER marking as ended to prevent race conditions
       for (const callback of self.endCallbacks) {
         try {
-          // CRITICAL FIX: Don't pass chunk/encoding to callbacks to prevent header issues
-          // The response is already being ended, callbacks should not modify headers
           callback()
         } catch (error) {
           logger.error('End callback failed', {
             requestId: self.requestId,
-            error: error.message
+            error: error.message,
+            headersSent: self.areHeadersSent()
           })
+          // If headers are already sent, we can't send a new error response.
+          // The response is already being written, so we just log the callback failure.
+          if (!self.areHeadersSent()) {
+            // Re-throw to be caught by the global error handler if response hasn't started
+            throw error
+          }
         }
       }
 

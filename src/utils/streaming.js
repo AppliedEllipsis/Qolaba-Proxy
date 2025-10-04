@@ -97,7 +97,7 @@ class StreamingTimeoutManager {
 }
 
 // CRITICAL FIX: Improved streaming response handler with unified timeout management
-export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayload, requestId) {
+export async function handleStreamingResponse(responseManager, res, req, qolabaClient, qolabaPayload, requestId) {
   // Register with concurrency monitor
   concurrencyMonitor.registerRequest(requestId, {
     type: 'streaming',
@@ -107,9 +107,6 @@ export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayl
 
   // Create response state tracker
   const responseState = createResponseState(res, requestId)
-
-  // Use ResponseManager for coordinated response ending
-  const responseManager = req.responseManager || createResponseManager(res, requestId)
 
   // ENHANCEMENT: Use unified timeout manager instead of multiple competing systems
   const unifiedTimeoutManager = req.unifiedTimeoutManager || res.unifiedTimeoutManager
@@ -520,7 +517,7 @@ export async function handleStreamingResponse(res, req, qolabaClient, qolabaPayl
 }
 
 // Handle non-streaming response
-export async function handleNonStreamingResponse(res, qolabaClient, qolabaPayload, requestId) {
+export async function handleNonStreamingResponse(responseManager, res, qolabaClient, qolabaPayload, requestId) {
   try {
     logger.info('Non-streaming request started', {
       requestId,
@@ -559,7 +556,9 @@ export async function handleNonStreamingResponse(res, qolabaClient, qolabaPayloa
       usage: response.usage
     })
 
-    res.json(openaiResponse)
+    if (!responseManager.hasEnded()) {
+      res.json(openaiResponse)
+    }
 
   } catch (error) {
     logger.error('Non-streaming request failed', {
@@ -567,13 +566,15 @@ export async function handleNonStreamingResponse(res, qolabaClient, qolabaPayloa
       error: error.message
     })
 
-    res.status(500).json({
-      error: {
-        message: error.message,
-        type: 'api_error',
-        code: 'chat_completion_error'
-      }
-    })
+    if (!responseManager.hasEnded()) {
+      res.status(500).json({
+        error: {
+          message: error.message,
+          type: 'api_error',
+          code: 'chat_completion_error'
+        }
+      })
+    }
   }
 }
 

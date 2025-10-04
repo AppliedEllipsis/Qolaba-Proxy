@@ -8,6 +8,7 @@ import { config } from '../config/index.js'
 import { QolabaApiClient } from '../services/qolaba.js'
 import { translateOpenAIToQolaba, translateQolabaToOpenAI } from '../utils/translator.js'
 import { handleStreamingResponse, handleNonStreamingResponse } from '../utils/streaming.js'
+import { createResponseManager } from '../utils/responseManager.js'
 
 const router = express.Router()
 
@@ -17,9 +18,10 @@ router.post('/',
   streamRateLimit,
   requestTimer,
   requestBodyLogger,
-  async (req, res) => {
+  async (req, res, next) => {
     const startTime = Date.now()
-    
+    const responseManager = createResponseManager(res, req.id)
+
     try {
       logger.info('Chat completion request received', {
         requestId: req.id,
@@ -52,19 +54,9 @@ router.post('/',
 
       // Handle streaming vs non-streaming requests
       if (req.body.stream === true) {
-        try {
-          await handleStreamingResponse(res, req, qolabaClient, qolabaPayload, req.id)
-        } catch (streamingError) {
-          // Streaming errors are already handled by the streaming utility
-          // Just log and re-throw to let the error handler middleware deal with it
-          logger.error('Streaming request failed in route handler', {
-            requestId: req.id,
-            error: streamingError.message
-          })
-          throw streamingError
-        }
+        await handleStreamingResponse(responseManager, res, req, qolabaClient, qolabaPayload, req.id)
       } else {
-        await handleNonStreamingResponse(res, qolabaClient, qolabaPayload, req.id)
+        await handleNonStreamingResponse(responseManager, res, qolabaClient, qolabaPayload, req.id)
       }
 
       const duration = Date.now() - startTime
@@ -85,7 +77,7 @@ router.post('/',
       })
       
       // Let the error handler middleware deal with the error
-      throw error
+      next(error)
     }
   }
 )
