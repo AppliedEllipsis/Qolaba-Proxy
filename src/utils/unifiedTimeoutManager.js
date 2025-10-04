@@ -524,16 +524,38 @@ export function createUnifiedRequestTimeout(options = {}) {
   return (req, res, next) => {
     const requestId = req.id || 'unknown'
     
+    // Check if this is an advanced model that needs longer timeout
+    const model = req.body?.model || ''
+    const isAdvancedModel = isAdvancedModelRequest(model)
+    
+    // Adjust timeouts for advanced models
+    const timeoutOptions = {
+      ...defaultOptions,
+      defaultTimeout: isAdvancedModel ? 300000 : defaultOptions.defaultTimeout, // 5 minutes for advanced models
+      streamingTimeout: isAdvancedModel ? 300000 : defaultOptions.streamingTimeout, // 5 minutes for streaming advanced models
+    }
+    
+    // Log timeout adjustment for advanced models
+    if (isAdvancedModel) {
+      logger.info('Applied extended timeout for advanced model', {
+        requestId,
+        model,
+        defaultTimeout: timeoutOptions.defaultTimeout,
+        streamingTimeout: timeoutOptions.streamingTimeout,
+        reason: 'Advanced model requires longer processing time'
+      })
+    }
+    
     // Create unified timeout manager for this request
-    const timeoutManager = new UnifiedTimeoutManager(requestId, defaultOptions)
+    const timeoutManager = new UnifiedTimeoutManager(requestId, timeoutOptions)
     
     // Store reference for other middleware
     req.unifiedTimeoutManager = timeoutManager
     res.unifiedTimeoutManager = timeoutManager
 
     // Detect request type
-    const isStreamingRequest = req.path === '/v1/chat/completions' && 
-                             req.method === 'POST' && 
+    const isStreamingRequest = req.path === '/v1/chat/completions' &&
+                             req.method === 'POST' &&
                              req.body?.stream === true
 
     // Setup automatic timeouts
@@ -604,6 +626,26 @@ export function createUnifiedRequestTimeout(options = {}) {
 
     next()
   }
+}
+
+/**
+ * Check if the request is for an advanced model that needs longer timeout
+ */
+function isAdvancedModelRequest(model) {
+  if (!model) return false
+  
+  const advancedModels = [
+    'o1', 'o1-mini', 'o1-preview', 'o1-pro',
+    'o3', 'o3-mini', 'o3-preview', 'o3-pro',
+    'o4-mini', 'o4-mini-2025-04-16',
+    'o4', 'o4-preview', 'o4-pro',
+    // Add any other models that need longer processing time
+  ]
+  
+  // Check if model name contains any of the advanced model prefixes
+  return advancedModels.some(advancedModel =>
+    model.toLowerCase().includes(advancedModel.toLowerCase())
+  )
 }
 
 export default {
