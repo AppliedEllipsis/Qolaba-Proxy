@@ -484,3 +484,16 @@ If you encounter issues or have questions:
 // Note for test workflows
 // Important: Start the server before running test scripts to observe streaming in real-time.
 // See ai.md for detailed knowledge base and testing guidelines.
+// Tests and how to run them
+// - Run the standard test suite (uses Jest as configured in package.json):
+//     npm test
+// - Run header-fix focused tests (per the repo's scripts):
+//     npm run test:header-fix
+// - Run a specific test file (if using Jest with a single test file path):
+//     npm test -- tests/<filename>.js
+// - If the project requires ES module execution, ensure Node runs with proper module support (e.g., "type": "module" in package.json or use --input-type=module as needed).
+//
+// Documentation notes:
+// - ES modules are used across test files where possible; some legacy scripts may still rely on dynamic imports.
+// - The test runner entrypoints (tests/test-runner.js and related test-*.js files) should import correctly in an ES module context.
+// - Ensure package.json scripts align with your CI environment; if Jest is not desired, you can swap test runner commands accordingly.

@@ -320,7 +320,7 @@ export class ManualTestScript {
           ...options
         }
         
-        const httpModule = url.startsWith('https:') ? require('https') : require('http')
+        const httpModule = url.startsWith('https:') ? (await import('https')).default : (await import('http')).default
         const req = httpModule.request(url, requestOptions, (res) => {
           response = res
           
@@ -365,7 +365,7 @@ export class ManualTestScript {
     
     return new Promise((resolve, reject) => {
       try {
-        const httpModule = url.startsWith('https:') ? require('https') : require('http')
+        const httpModule = url.startsWith('https:') ? (await import('https')).default : (await import('http')).default
         const req = httpModule.request(url, {
           method: 'POST',
           headers: {
@@ -411,7 +411,7 @@ export class ManualTestScript {
     
     return new Promise((resolve, reject) => {
       try {
-        const httpModule = url.startsWith('https:') ? require('https') : require('http')
+        const httpModule = url.startsWith('https:') ? (await import('https')).default : (await import('http')).default
         const req = httpModule.request(url, (res) => {
           let data = ''
           
