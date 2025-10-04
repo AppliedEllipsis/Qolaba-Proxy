@@ -5,10 +5,9 @@ const config = {
   testEnvironment: 'node',
   
   // Transform configuration for ES modules
-  transform: {},
-  
-  // No need to specify .js files as ESM since package.json has "type": "module"
-  // extensionsToTreatAsEsm: ['.js'],
+  transform: {
+    '^.+\\.js$': 'babel-jest'
+  },
   
   // Module file extensions
   moduleFileExtensions: ['js', 'json'],
@@ -38,4 +37,4 @@ const config = {
   verbose: true
 };
 
-export default config;
+module.exports = config;

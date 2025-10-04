@@ -8,7 +8,7 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "build": "echo 'No build step required for Node.js'",
-    "test": "cross-env NODE_ENV=test NODE_OPTIONS=\"--experimental-vm-modules\" jest --forceExit",
+    "test": "cross-env NODE_ENV=test jest --forceExit",
     "test:e2e": "cross-env NODE_ENV=test NODE_OPTIONS=\"--experimental-vm-modules\" jest --forceExit",
     "test:watch": "cross-env NODE_ENV=test NODE_OPTIONS=\"--experimental-vm-modules\" jest --watch",
     "test:coverage": "cross-env NODE_ENV=test NODE_OPTIONS=\"--experimental-vm-modules\" jest --coverage",
@@ -40,7 +40,10 @@
     "winston": "^3.11.0"
   },
   "devDependencies": {
+    "@babel/core": "^7.28.4",
+    "@babel/preset-env": "^7.28.3",
     "@jest/globals": "^30.2.0",
+    "babel-jest": "^30.2.0",
     "cross-env": "^10.1.0",
     "eslint": "^8.54.0",
     "eslint-config-standard": "^17.1.0",
