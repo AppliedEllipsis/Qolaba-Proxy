@@ -35,12 +35,12 @@ export const requestTimeout = (defaultTimeoutMs = 30000) => {
         isStreaming: isStreamingRequest
       })
 
-      // ENHANCEMENT: Check for ResponseState coordination first
+      // ENHANCEMENT: Check for ResponseManager coordination first
       if (res.cancelAllTimeouts && typeof res.cancelAllTimeouts === 'function') {
         try {
           const cancelled = res.cancelAllTimeouts('request_timeout')
           if (cancelled) {
-            logger.debug('Timeout cancelled by ResponseState coordination', {
+            logger.debug('Timeout cancelled by ResponseManager coordination', {
               requestId,
               duration: `${duration}ms`
             })
@@ -49,7 +49,7 @@ export const requestTimeout = (defaultTimeoutMs = 30000) => {
         } catch (error) {
           logDetailedError(error, {
             requestId,
-            method: 'cancel_timeouts_responsestate',
+            method: 'cancel_timeouts_responsemanager',
             url: 'request_timeout_middleware',
             responseState: {
               headersSent: res.headersSent,
@@ -64,7 +64,7 @@ export const requestTimeout = (defaultTimeoutMs = 30000) => {
             }
           })
           
-          logger.warn('Failed to cancel timeouts via ResponseState', {
+          logger.warn('Failed to cancel timeouts via ResponseManager', {
             requestId,
             error: error.message
           })
@@ -151,12 +151,12 @@ export const requestTimeout = (defaultTimeoutMs = 30000) => {
       }
     }, timeoutMs)
 
-    // ENHANCEMENT: Register timeout with ResponseState for coordinated cancellation
+    // ENHANCEMENT: Register timeout with ResponseManager for coordinated cancellation
     if (res.registerTimeoutCallback && typeof res.registerTimeoutCallback === 'function') {
       try {
         const registered = res.registerTimeoutCallback((reason) => {
           clearTimeout(timeout)
-          logger.debug('Request timeout cancelled via ResponseState', {
+          logger.debug('Request timeout cancelled via ResponseManager', {
             requestId,
             reason,
             duration: `${Date.now() - startTime}ms`
@@ -164,7 +164,7 @@ export const requestTimeout = (defaultTimeoutMs = 30000) => {
         })
         
         if (registered) {
-          logger.debug('Request timeout registered with ResponseState', {
+          logger.debug('Request timeout registered with ResponseManager', {
             requestId,
             timeoutMs,
             isStreaming: isStreamingRequest
@@ -173,7 +173,7 @@ export const requestTimeout = (defaultTimeoutMs = 30000) => {
       } catch (error) {
         logDetailedError(error, {
           requestId,
-          method: 'register_timeout_responsestate',
+          method: 'register_timeout_responsemanager',
           url: 'request_timeout_middleware',
           responseState: {
             headersSent: res.headersSent,
@@ -187,14 +187,14 @@ export const requestTimeout = (defaultTimeoutMs = 30000) => {
           }
         })
         
-        logger.warn('Failed to register timeout with ResponseState', {
+        logger.warn('Failed to register timeout with ResponseManager', {
           requestId,
           error: error.message
         })
       }
     }
 
-    // Store timeout reference for potential manual cleanup and ResponseState coordination
+    // Store timeout reference for potential manual cleanup and ResponseManager coordination
     req.timeoutRef = timeout
     if (res.setRequestTimeoutRef && typeof res.setRequestTimeoutRef === 'function') {
       try {
@@ -216,7 +216,7 @@ export const requestTimeout = (defaultTimeoutMs = 30000) => {
           }
         })
         
-        logger.warn('Failed to set timeout reference in ResponseState', {
+        logger.warn('Failed to set timeout reference in ResponseManager', {
           requestId,
           error: error.message
         })

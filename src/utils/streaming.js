@@ -1,7 +1,6 @@
 import { logger, logDetailedError, logResponseState, logHeaderOperation } from '../services/logger.js'
 import { translateQolabaToOpenAI, extractToolCalls } from './translator.js'
 import { config } from '../config/index.js'
-import { createResponseState, withStreamingErrorBoundary, SafeSSEWriter } from './responseState.js'
 import { concurrencyMonitor } from './concurrencyMonitor.js'
 import { createResponseManager } from './responseManager.js'
 
@@ -113,6 +112,145 @@ class StreamingTimeoutManager {
   }
 }
 
+/**
+ * Safe SSE (Server-Sent Events) writer for ResponseManager
+ */
+class SafeSSEWriter {
+  constructor(responseManager) {
+    this.responseManager = responseManager
+  }
+
+  writeEvent(data, eventType = null) {
+    if (!this.responseManager.res.canWrite()) {
+      return false
+    }
+
+    try {
+      let sseData = `data: ${JSON.stringify(data)}\n\n`
+      
+      if (eventType) {
+        sseData = `event: ${eventType}\n${sseData}`
+      }
+
+      return this.responseManager.safeWrite(sseData)
+    } catch (error) {
+      logger.error('Failed to write SSE event', {
+        requestId: this.responseManager.requestId,
+        error: error.message
+      })
+      return false
+    }
+  }
+
+  writeDone() {
+    if (!this.responseManager.res.canWrite()) {
+      return false
+    }
+
+    try {
+      // Write the DONE marker
+      const success = this.responseManager.safeWrite('data: [DONE]\n\n')
+      
+      // CRITICAL FIX: Don't end the response here - let coordinatedTermination handle it
+      // This prevents "Cannot set headers after they are sent to the client" error
+      
+      return success
+    } catch (error) {
+      logger.error('Failed to write SSE DONE', {
+        requestId: this.responseManager.requestId,
+        error: error.message
+      })
+      return false
+    }
+  }
+}
+
+/**
+ * Enhanced error boundary with coordinated termination for ResponseManager
+ */
+async function withStreamingErrorBoundary(fn, responseManager, errorHandler) {
+  try {
+    return await fn(responseManager)
+  } catch (error) {
+    logger.error('Streaming error boundary triggered', {
+      requestId: responseManager.requestId,
+      error: error.message,
+      stack: error.stack
+    })
+
+    // CRITICAL FIX: Use coordinated termination to prevent race conditions
+    try {
+      await responseManager.coordinatedTermination('error_boundary')
+    } catch (terminationError) {
+      logger.warn('Coordinated termination failed in error boundary', {
+        requestId: responseManager.requestId,
+        error: terminationError.message
+      })
+    }
+
+    // Only attempt to send error response if response hasn't been terminated
+    if (!responseManager.hasEnded() && !responseManager.isDestroyed) {
+      // Try to send error response only if headers haven't been sent
+      if (responseManager.res.canWriteHeaders()) {
+        try {
+          responseManager.safeWriteHeaders(500, {
+            'Content-Type': 'application/json',
+            'Connection': 'close'
+          })
+
+          const errorResponse = {
+            error: {
+              message: 'Internal streaming error',
+              type: 'api_error',
+              code: 'streaming_error'
+            }
+          }
+
+          responseManager.safeWrite(JSON.stringify(errorResponse))
+          responseManager.safeEnd()
+        } catch (writeError) {
+          logger.error('Failed to send error response in stream', {
+            requestId: responseManager.requestId,
+            error: writeError.message
+          })
+        }
+      } else {
+        logger.debug('Skipping error response - headers already sent', {
+          requestId: responseManager.requestId,
+          headersSent: responseManager.areHeadersSent()
+        })
+      }
+    } else {
+      logger.debug('Skipping error response - response already terminated', {
+        requestId: responseManager.requestId,
+        isEnded: responseManager.hasEnded(),
+        isDestroyed: responseManager.isDestroyed
+      })
+    }
+
+    // Call custom error handler if provided, but don't let it throw
+    if (errorHandler) {
+      try {
+        await errorHandler(error, responseManager)
+      } catch (handlerError) {
+        logger.error('Error handler failed', {
+          requestId: responseManager.requestId,
+          error: handlerError.message
+        })
+        // Don't re-throw handler errors to prevent cascading failures
+      }
+    }
+
+    // Force destroy as last resort only if not already destroyed
+    if (!responseManager.isDestroyed) {
+      responseManager.destroy()
+    }
+
+    // Re-throw the original error to maintain error propagation
+    throw error
+  }
+}
+
 // CRITICAL FIX: Improved streaming response handler with unified timeout management
 export async function handleStreamingResponse(responseManager, res, req, qolabaClient, qolabaPayload, requestId) {
   // Register with concurrency monitor
@@ -122,8 +260,8 @@ export async function handleStreamingResponse(responseManager, res, req, qolabaC
     stream: true
   })
 
-  // Create response state tracker
-  const responseState = createResponseState(res, requestId)
+  // Use the consolidated response manager instead of separate response state
+  const responseState = responseManager
 
   // ENHANCEMENT: Use unified timeout manager instead of multiple competing systems
   const unifiedTimeoutManager = req.unifiedTimeoutManager || res.unifiedTimeoutManager
@@ -485,9 +623,10 @@ export async function handleStreamingResponse(responseManager, res, req, qolabaC
         model: qolabaPayload.model
       })
 
-      // Ensure ResponseManager is properly ended through its coordination
+      // CRITICAL FIX: Use coordinated termination instead of direct res.end() call
+      // This prevents "Cannot set headers after they are sent to the client" error
       if (responseManager && !responseManager.hasEnded()) {
-        res.end()
+        await responseManager.coordinatedTermination('streaming_complete')
       }
 
     } catch (error) {
@@ -496,8 +635,8 @@ export async function handleStreamingResponse(responseManager, res, req, qolabaC
         method: 'streaming_completion_termination',
         url: 'streaming_handler',
         responseState: {
-          headersSent: responseState.isHeadersSent,
-          ended: responseState.isEnded,
+          headersSent: responseState.areHeadersSent(),
+          ended: responseState.hasEnded(),
           writable: responseState.res.writable
         },
         additionalInfo: {
@@ -518,19 +657,20 @@ export async function handleStreamingResponse(responseManager, res, req, qolabaC
         responseLength: fullResponse.length
       })
 
-      // Ensure ResponseManager is properly ended through its coordination even on error
+      // CRITICAL FIX: Use coordinated termination instead of direct res.end() call
+      // This prevents "Cannot set headers after they are sent to the client" error
       if (responseManager && !responseManager.hasEnded()) {
         try {
-          logHeaderOperation(requestId, 'res.end_call_completion_error', true)
-          res.end()
+          logHeaderOperation(requestId, 'coordinated_termination_completion_error', true)
+          await responseManager.coordinatedTermination('streaming_completion_error')
         } catch (endError) {
           logDetailedError(endError, {
             requestId,
-            method: 'res.end_completion_error',
+            method: 'coordinated_termination_completion_error',
             url: 'streaming_handler',
             responseState: {
-              headersSent: responseState.isHeadersSent,
-              ended: responseState.isEnded,
+              headersSent: responseState.areHeadersSent(),
+              ended: responseState.hasEnded(),
               writable: responseState.res.writable
             },
             additionalInfo: {
@@ -555,7 +695,7 @@ export async function handleStreamingResponse(responseManager, res, req, qolabaC
       }
     }
 
-  }, responseState, async (error, responseState) => {
+  }, responseManager, async (error, responseManager) => {
     // Custom error handler for streaming
     logger.error('Streaming error handler called', {
       requestId,
@@ -571,9 +711,10 @@ export async function handleStreamingResponse(responseManager, res, req, qolabaC
         error: error.message
       })
 
-      // Ensure ResponseManager is properly ended through its coordination on error
+      // CRITICAL FIX: Use coordinated termination instead of direct res.end() call
+      // This prevents "Cannot set headers after they are sent to the client" error
       if (responseManager && !responseManager.hasEnded()) {
-        res.end()
+        await responseManager.coordinatedTermination('streaming_error')
       }
 
     } catch (terminationError) {
@@ -607,8 +748,8 @@ export async function handleStreamingResponse(responseManager, res, req, qolabaC
       // Ensure ResponseManager is properly ended through its coordination even on termination error
       if (responseManager && !responseManager.hasEnded()) {
         try {
-          logHeaderOperation(requestId, 'res.end_call_termination_error', true)
-          res.end()
+          logHeaderOperation(requestId, 'coordinated_termination_error', true)
+          await responseManager.coordinatedTermination('streaming_termination_error')
         } catch (endError) {
           logDetailedError(endError, {
             requestId,
@@ -642,7 +783,7 @@ export async function handleStreamingResponse(responseManager, res, req, qolabaC
     }
 
     // Try to send error response only if headers haven't been sent and response hasn't ended
-    if (responseState.res.canWriteHeaders()) {
+    if (responseManager.res.canWriteHeaders()) {
       const errorChunk = {
         id: generateChunkId(),
         object: 'chat.completion.chunk',
@@ -661,7 +802,7 @@ export async function handleStreamingResponse(responseManager, res, req, qolabaC
         }
       }
 
-      const sseWriter = new SafeSSEWriter(responseState)
+      const sseWriter = new SafeSSEWriter(responseManager)
       sseWriter.writeEvent(errorChunk)
       sseWriter.writeDone()
       
@@ -781,41 +922,41 @@ export function createTimeoutErrorResponse(requestId, message = 'Request timeout
 /**
  * Send timeout error as streaming chunk (if streaming headers already sent)
  */
-export function sendTimeoutErrorStreaming(responseState, model, message = 'Request timeout') {
-  if (!responseState.res.canWrite()) {
+export function sendTimeoutErrorStreaming(responseManager, model, message = 'Request timeout') {
+  if (!responseManager.res.canWrite()) {
     logger.debug('Cannot send timeout error streaming chunk - response cannot write', {
-      requestId: responseState.requestId
+      requestId: responseManager.requestId
     })
     return false
   }
 
   try {
-    const errorChunk = createTimeoutErrorChunk(responseState.requestId, model, message)
-    const sseWriter = new SafeSSEWriter(responseState)
+    const errorChunk = createTimeoutErrorChunk(responseManager.requestId, model, message)
+    const sseWriter = new SafeSSEWriter(responseManager)
     
     const success = sseWriter.writeEvent(errorChunk)
     if (success) {
       sseWriter.writeDone()
       logger.info('Sent timeout error as streaming chunk', {
-        requestId: responseState.requestId,
+        requestId: responseManager.requestId,
         model
       })
       return true
     } else {
       logger.warn('Failed to write timeout error streaming chunk', {
-        requestId: responseState.requestId
+        requestId: responseManager.requestId
       })
       return false
     }
   } catch (error) {
     logDetailedError(error, {
-      requestId: responseState.requestId,
+      requestId: responseManager.requestId,
       method: 'send_timeout_error_streaming',
       url: 'streaming_timeout_handler',
       responseState: {
-        headersSent: responseState.isHeadersSent,
-        ended: responseState.isEnded,
-        writable: responseState.res.writable
+        headersSent: responseManager.areHeadersSent(),
+        ended: responseManager.hasEnded(),
+        writable: responseManager.res.writable
       },
       additionalInfo: {
         timeoutMessage: message,
@@ -825,7 +966,7 @@ export function sendTimeoutErrorStreaming(responseState, model, message = 'Reque
     })
     
     logger.error('Error sending timeout error streaming chunk', {
-      requestId: responseState.requestId,
+      requestId: responseManager.requestId,
       error: error.message
     })
     return false
@@ -878,31 +1019,31 @@ export function sendTimeoutErrorHttp(res, requestId, message = 'Request timeout'
 /**
  * Handle timeout error with hybrid approach - try streaming first, fallback to HTTP
  */
-export async function handleTimeoutError(responseState, model, reason = 'timeout') {
+export async function handleTimeoutError(responseManager, model, reason = 'timeout') {
   const message = reason === 'base_timeout' ? 'Request timeout' :
                   reason === 'streaming_timeout' ? 'Streaming timeout' :
                   reason === 'inactivity_timeout' ? 'Request timeout due to inactivity' :
                   'Request timeout'
 
   logger.warn('Handling timeout error with hybrid approach', {
-    requestId: responseState.requestId,
+    requestId: responseManager.requestId,
     reason,
-    headersSent: responseState.isHeadersSent,
-    canWriteHeaders: responseState.res.canWriteHeaders(),
-    canWrite: responseState.res.canWrite()
+    headersSent: responseManager.areHeadersSent(),
+    canWriteHeaders: responseManager.res.canWriteHeaders(),
+    canWrite: responseManager.res.canWrite()
   })
 
   // Try streaming error first if headers already sent
-  if (responseState.isHeadersSent && responseState.res.canWrite()) {
-    const streamingSuccess = sendTimeoutErrorStreaming(responseState, model, message)
+  if (responseManager.areHeadersSent() && responseManager.res.canWrite()) {
+    const streamingSuccess = sendTimeoutErrorStreaming(responseManager, model, message)
     if (streamingSuccess) {
       return true
     }
   }
 
   // Fallback to HTTP error if streaming failed or headers not sent
-  if (responseState.res.canWriteHeaders()) {
-    const httpSuccess = sendTimeoutErrorHttp(responseState.res, responseState.requestId, message)
+  if (responseManager.res.canWriteHeaders()) {
+    const httpSuccess = sendTimeoutErrorHttp(responseManager.res, responseManager.requestId, message)
     if (httpSuccess) {
       return true
     }
@@ -910,7 +1051,7 @@ export async function handleTimeoutError(responseState, model, reason = 'timeout
 
   // If both methods failed, log and proceed with termination
   logger.warn('Both streaming and HTTP timeout error delivery failed, proceeding with termination', {
-    requestId: responseState.requestId,
+    requestId: responseManager.requestId,
     reason
   })
   return false
