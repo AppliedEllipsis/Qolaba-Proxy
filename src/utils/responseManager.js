@@ -52,7 +52,7 @@ export class ResponseManager {
     this.res.writeHead = function(...args) {
       // CRITICAL FIX: Add header state guard to prevent setting headers after they're sent
       if (self.headersSent) {
-        logger.warn('Attempted to write headers after they were already sent', {
+        logger.debug('Headers already sent, skipping writeHead', {
           requestId: self.requestId,
           args: args.slice(0, 2) // Log only status and headers for security
         })
@@ -61,7 +61,7 @@ export class ResponseManager {
       
       // CRITICAL FIX: Check multiple end conditions to prevent corrupt responses
       if (self.isEnded || self.isDestroyed || self.res.writableEnded || self.res.finished) {
-        logger.warn('Attempted to write headers on ended or destroyed response', {
+        logger.debug('Response already ended, skipping writeHead', {
           requestId: self.requestId,
           isEnded: self.isEnded,
           isDestroyed: self.isDestroyed,

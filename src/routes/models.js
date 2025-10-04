@@ -24,18 +24,205 @@ router.get('/',
         }
       })
 
-      // Get available models from configuration
-      let availableModels = Object.entries(config.modelMappings)
-        .filter(([key]) => key !== 'default')
-        .map(([modelId, modelConfig]) => ({
-          id: modelId,
+      // Get available models from Qolaba documentation
+      let availableModels = [
+        // OpenAI models
+        {
+          id: 'gpt-4.1-mini-2025-04-14',
           object: 'model',
           created: Date.now(),
-          owned_by: modelConfig.provider.toLowerCase(),
+          owned_by: 'openai',
           permission: [],
-          root: modelId,
+          root: 'gpt-4.1-mini-2025-04-14',
           parent: null
-        }))
+        },
+        {
+          id: 'gpt-4.1-2025-04-14',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'openai',
+          permission: [],
+          root: 'gpt-4.1-2025-04-14',
+          parent: null
+        },
+        {
+          id: 'gpt-4o-mini',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'openai',
+          permission: [],
+          root: 'gpt-4o-mini',
+          parent: null
+        },
+        {
+          id: 'gpt-4o',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'openai',
+          permission: [],
+          root: 'gpt-4o',
+          parent: null
+        },
+        {
+          id: 'o3-mini',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'openai',
+          permission: [],
+          root: 'o3-mini',
+          parent: null
+        },
+        {
+          id: 'o1',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'openai',
+          permission: [],
+          root: 'o1',
+          parent: null
+        },
+        {
+          id: 'o3',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'openai',
+          permission: [],
+          root: 'o3',
+          parent: null
+        },
+        {
+          id: 'o4-mini-2025-04-16',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'openai',
+          permission: [],
+          root: 'o4-mini-2025-04-16',
+          parent: null
+        },
+        
+        // ClaudeAI models
+        {
+          id: 'claude-3-7-sonnet-latest',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'claudeai',
+          permission: [],
+          root: 'claude-3-7-sonnet-latest',
+          parent: null
+        },
+        {
+          id: 'claude-opus-4-20250514',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'claudeai',
+          permission: [],
+          root: 'claude-opus-4-20250514',
+          parent: null
+        },
+        {
+          id: 'claude-sonnet-4-20250514',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'claudeai',
+          permission: [],
+          root: 'claude-sonnet-4-20250514',
+          parent: null
+        },
+        
+        // GeminiAI models
+        {
+          id: 'gemini-2.5-pro',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'geminiai',
+          permission: [],
+          root: 'gemini-2.5-pro',
+          parent: null
+        },
+        {
+          id: 'gemini-2.5-flash',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'geminiai',
+          permission: [],
+          root: 'gemini-2.5-flash',
+          parent: null
+        },
+        
+        // OpenRouterAI models
+        {
+          id: 'x-ai/grok-3-beta',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'openrouterai',
+          permission: [],
+          root: 'x-ai/grok-3-beta',
+          parent: null
+        },
+        {
+          id: 'x-ai/grok-3-mini-beta',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'openrouterai',
+          permission: [],
+          root: 'x-ai/grok-3-mini-beta',
+          parent: null
+        },
+        {
+          id: 'perplexity/sonar-pro',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'openrouterai',
+          permission: [],
+          root: 'perplexity/sonar-pro',
+          parent: null
+        },
+        {
+          id: 'perplexity/sonar-reasoning-pro',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'openrouterai',
+          permission: [],
+          root: 'perplexity/sonar-reasoning-pro',
+          parent: null
+        },
+        {
+          id: 'perplexity/sonar-reasoning',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'openrouterai',
+          permission: [],
+          root: 'perplexity/sonar-reasoning',
+          parent: null
+        },
+        {
+          id: 'perplexity/sonar-deep-research',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'openrouterai',
+          permission: [],
+          root: 'perplexity/sonar-deep-research',
+          parent: null
+        },
+        {
+          id: 'deepseek/deepseek-chat',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'openrouterai',
+          permission: [],
+          root: 'deepseek/deepseek-chat',
+          parent: null
+        },
+        {
+          id: 'deepseek/deepseek-r1',
+          object: 'model',
+          created: Date.now(),
+          owned_by: 'openrouterai',
+          permission: [],
+          root: 'deepseek/deepseek-r1',
+          parent: null
+        }
+      ]
 
       // Fallback: if no models are configured (edge-case), populate with default model
       if (availableModels.length === 0) {
@@ -76,7 +263,25 @@ router.get('/',
         }
       })
 
-      res.json(response)
+      // CRITICAL FIX: Temporarily bypass response manager for models endpoint
+      if (req.responseManager) {
+        // Temporarily disable response manager
+        const originalEnd = res.end
+        const originalWriteHead = res.writeHead
+        
+        // Restore original methods
+        res.end = req.responseManager.originalEnd
+        res.writeHead = req.responseManager.originalWriteHead
+        
+        // Send response
+        res.json(response)
+        
+        // Restore response manager methods
+        res.end = originalEnd
+        res.writeHead = originalWriteHead
+      } else {
+        res.json(response)
+      }
 
     } catch (error) {
       logger.error('Models list failed', {
