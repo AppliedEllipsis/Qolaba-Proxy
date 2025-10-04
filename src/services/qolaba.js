@@ -298,12 +298,28 @@ export class QolabaApiClient {
       const responseTime = Date.now() - startTime
       logQolabaRequest('/streamChat', 'POST', payload, responseTime, error.response?.status || 'ERROR')
       
-      // Add more specific error handling
+      // Add more specific error handling with enhanced logging
       if (error.code === 'ECONNABORTED') {
+        logger.error('Qolaba API timeout detected', {
+          timeout: config.qolaba.timeout,
+          errorMessage: error.message,
+          errorCode: error.code,
+          stack: error.stack
+        })
         throw new Error('Streaming request timeout')
       } else if (error.code === 'ECONNRESET') {
+        logger.error('Qolaba API connection reset', {
+          errorMessage: error.message,
+          errorCode: error.code,
+          stack: error.stack
+        })
         throw new Error('Connection reset during streaming')
       } else {
+        logger.error('Qolaba API unexpected error', {
+          errorMessage: error.message,
+          errorCode: error.code,
+          stack: error.stack
+        })
         throw error
       }
     }
