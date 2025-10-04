@@ -85,6 +85,14 @@ export class QolabaApiClient {
   async streamChat(payload, onChunk) {
     const startTime = Date.now()
     
+    // DIAGNOSTIC: Log timeout configuration for debugging
+    logger.debug('Qolaba API streamChat started', {
+      timeout: 90000,
+      inactivityTimeout: 60000,
+      absoluteTimeout: 85000,
+      payloadSize: JSON.stringify(payload).length
+    })
+    
     try {
       const response = await this.client.post('/streamChat', payload, {
         responseType: 'stream',
@@ -252,13 +260,15 @@ export class QolabaApiClient {
             const timeSinceLastChunk = Date.now() - lastChunkTime
             const totalElapsed = Date.now() - startTime
             
+            // CRITICAL FIX: Coordinate timeouts with axios timeout to prevent race conditions
             // Allow more time for provider latency but don't wait indefinitely
-            if (timeSinceLastChunk > 60000) { // 60 seconds of inactivity
+            if (timeSinceLastChunk > 75000) { // 75 seconds of inactivity (less than 90s axios timeout)
               isStreamEnded = true
               logger.warn('Stream inactive for too long, cleaning up', {
                 requestId: 'unknown',
                 inactivityTime: `${timeSinceLastChunk}ms`,
-                totalElapsed: `${totalElapsed}ms`
+                totalElapsed: `${totalElapsed}ms`,
+                timeoutType: 'inactivity_timeout'
               })
 
               cleanupStream(response, 'inactivity_timeout')
@@ -266,11 +276,12 @@ export class QolabaApiClient {
               return
             }
             
-            if (totalElapsed > 85000) { // 85 seconds absolute maximum
+            if (totalElapsed > 80000) { // 80 seconds absolute maximum (less than 90s axios timeout)
               isStreamEnded = true
               logger.warn('Stream absolute timeout reached, cleaning up', {
                 requestId: 'unknown',
-                totalElapsed: `${totalElapsed}ms`
+                totalElapsed: `${totalElapsed}ms`,
+                timeoutType: 'absolute_timeout'
               })
 
               cleanupStream(response, 'absolute_timeout')

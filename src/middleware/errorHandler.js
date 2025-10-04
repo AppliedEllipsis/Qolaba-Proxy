@@ -1,6 +1,17 @@
 import { logger, logDetailedError, logResponseState, logHeaderOperation } from '../services/logger.js'
 
 export const errorHandler = (error, req, res, next) => {
+  // DIAGNOSTIC: Enhanced logging for error handler invocation
+  logger.debug('Error handler invoked', {
+    requestId: req.id,
+    error: error.message,
+    headersSent: res.headersSent,
+    writableEnded: res.writableEnded,
+    writable: res.writable,
+    finished: res.finished,
+    stackTrace: error.stack?.substring(0, 200) + '...'
+  })
+  
   // If the response has already been sent, do not attempt to modify headers
   if (res.headersSent || res.writableEnded) {
     logDetailedError(error, {
@@ -10,11 +21,13 @@ export const errorHandler = (error, req, res, next) => {
       responseState: {
         headersSent: res.headersSent,
         ended: res.writableEnded,
-        writable: res.writable
+        writable: res.writable,
+        finished: res.finished
       },
       additionalInfo: {
         errorType: 'headers_already_sent',
-        errorHandlerType: 'post_response_error'
+        errorHandlerType: 'post_response_error',
+        callerStack: new Error().stack
       }
     })
     
@@ -22,7 +35,9 @@ export const errorHandler = (error, req, res, next) => {
       requestId: req.id,
       error: error.message,
       headersSent: res.headersSent,
-      writableEnded: res.writableEnded
+      writableEnded: res.writableEnded,
+      writable: res.writable,
+      finished: res.finished
     })
     return
   }

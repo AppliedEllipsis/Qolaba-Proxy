@@ -288,7 +288,19 @@ export async function handleStreamingResponse(responseManager, res, req, qolabaC
   // CRITICAL FIX: Safe termination handler with proper Promise handling
   const safeHandleTermination = async (reason) => {
     try {
-      logger.debug('Starting safe termination', { requestId, reason })
+      // DIAGNOSTIC: Log termination attempt with detailed state
+      logger.debug('Starting safe termination', {
+        requestId,
+        reason,
+        responseState: {
+          headersSent: responseState.isHeadersSent,
+          ended: responseState.isEnded,
+          writable: responseState.res.writable,
+          destroyed: responseState.isDestroyed
+        },
+        unifiedTimeoutManagerAvailable: !!unifiedTimeoutManager,
+        canOperate: unifiedTimeoutManager ? unifiedTimeoutManager.canOperate() : 'N/A'
+      })
       
       // Update activity to show we're handling termination
       if (unifiedTimeoutManager) {
@@ -615,19 +627,16 @@ export async function handleStreamingResponse(responseManager, res, req, qolabaC
         unifiedTimeoutManager.updateActivity()
       }
 
-      await handleTermination('streaming_complete')
+      // CRITICAL FIX: Only terminate once to prevent race conditions
+      if (responseManager && !responseManager.hasEnded()) {
+        await responseManager.coordinatedTermination('streaming_complete')
+      }
 
       // Complete request in concurrency monitor
       concurrencyMonitor.completeRequest(requestId, 'completed', {
         responseLength: fullResponse.length,
         model: qolabaPayload.model
       })
-
-      // CRITICAL FIX: Use coordinated termination instead of direct res.end() call
-      // This prevents "Cannot set headers after they are sent to the client" error
-      if (responseManager && !responseManager.hasEnded()) {
-        await responseManager.coordinatedTermination('streaming_complete')
-      }
 
     } catch (error) {
       logDetailedError(error, {
@@ -704,18 +713,15 @@ export async function handleStreamingResponse(responseManager, res, req, qolabaC
 
     // CRITICAL FIX: Use coordinated termination for error handling
     try {
-      await safeHandleTermination('streaming_error')
+      // CRITICAL FIX: Only terminate once to prevent race conditions
+      if (responseManager && !responseManager.hasEnded()) {
+        await responseManager.coordinatedTermination('streaming_error')
+      }
 
       // Mark as failed in concurrency monitor
       concurrencyMonitor.completeRequest(requestId, 'error', {
         error: error.message
       })
-
-      // CRITICAL FIX: Use coordinated termination instead of direct res.end() call
-      // This prevents "Cannot set headers after they are sent to the client" error
-      if (responseManager && !responseManager.hasEnded()) {
-        await responseManager.coordinatedTermination('streaming_error')
-      }
 
     } catch (terminationError) {
       logDetailedError(terminationError, {
@@ -1045,6 +1051,17 @@ export async function handleTimeoutError(responseManager, model, reason = 'timeo
     // DIAGNOSTIC: Track timing
     timestamp: Date.now()
   })
+
+  // CRITICAL FIX: Check if response is already ended before attempting to send error
+  if (responseManager.hasEnded() || responseManager.isDestroyed) {
+    logger.debug('Response already ended or destroyed, skipping timeout error delivery', {
+      requestId: responseManager.requestId,
+      reason,
+      isEnded: responseManager.hasEnded(),
+      isDestroyed: responseManager.isDestroyed
+    })
+    return false
+  }
 
   // Try streaming error first if headers already sent
   if (responseManager.areHeadersSent() && responseManager.res.canWrite()) {
