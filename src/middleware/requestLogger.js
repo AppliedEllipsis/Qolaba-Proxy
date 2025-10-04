@@ -4,8 +4,22 @@ import { config } from '../config/index.js'
 import { sanitizeForLogging, safePayloadSize } from '../utils/serialization.js'
 
 export const requestLogger = (req, res, next) => {
-  // Generate unique request ID
-  req.id = uuidv4()
+  // Generate unique request ID if not already set by response manager
+  const originalRequestId = req.id
+  if (!req.id) {
+    req.id = uuidv4()
+    logger.debug('Generated request ID in request logger', {
+      requestId: req.id,
+      url: req.url,
+      method: req.method
+    })
+  } else {
+    logger.debug('Request ID already exists from response manager', {
+      requestId: req.id,
+      url: req.url,
+      method: req.method
+    })
+  }
   
   // Add request ID to response headers
   res.set('X-Request-ID', req.id)

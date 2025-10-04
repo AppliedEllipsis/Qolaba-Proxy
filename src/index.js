@@ -49,6 +49,16 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 app.use(healthMonitor())
 // Response manager - must be before other middleware that might use res.end
 app.use((req, res, next) => {
+  // CRITICAL FIX: Generate request ID here since requestLogger hasn't run yet
+  if (!req.id) {
+    req.id = require('uuid').v4()
+    logger.debug('Generated request ID in response manager middleware', {
+      requestId: req.id,
+      url: req.url,
+      method: req.method
+    })
+  }
+  
   req.responseManager = createResponseManager(res, req.id)
   next()
 })

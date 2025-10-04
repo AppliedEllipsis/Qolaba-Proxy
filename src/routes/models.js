@@ -15,7 +15,13 @@ router.get('/',
     try {
       logger.info('Models list request received', {
         requestId: req.id,
-        authenticated: !!req.apiKey
+        authenticated: !!req.apiKey,
+        responseState: {
+          headersSent: res.headersSent,
+          writable: res.writable,
+          responseManagerExists: !!req.responseManager,
+          responseManagerState: req.responseManager ? req.responseManager.getState() : null
+        }
       })
 
       // Get available models from configuration
@@ -57,7 +63,17 @@ router.get('/',
 
       logger.debug('Models list response', {
         requestId: req.id,
-        modelCount: availableModels.length
+        modelCount: availableModels.length,
+        responseState: {
+          headersSent: res.headersSent,
+          writable: res.writable,
+          responseManagerState: req.responseManager ? req.responseManager.getState() : null
+        },
+        responseData: {
+          object: response.object,
+          dataLength: response.data.length,
+          firstModelId: response.data[0]?.id || 'none'
+        }
       })
 
       res.json(response)
