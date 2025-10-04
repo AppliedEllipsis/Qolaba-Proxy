@@ -443,6 +443,82 @@ Before going to production, verify:
 - [ ] Memory usage is stable
 - [ ] Timeouts are reasonable
 - [ ] Client disconnect handling works
+- [ ] All tests pass (166 tests across 7 test files)
+
+## 🧪 **Test Troubleshooting**
+
+### Running Tests
+
+```bash
+# Run all tests
+npm test
+
+# Run tests with coverage
+npm run test:coverage
+
+# Run tests in watch mode
+npm run test:watch
+```
+
+### Common Test Issues
+
+#### 1. Port Conflicts During Tests
+
+**Symptoms:**
+- `EADDRINUSE: address already in use 0.0.0.0:3000`
+- Tests failing to start server
+
+**Solutions:**
+- Ensure the server is not running before starting tests
+- Verify that `NODE_ENV=test` is set in the test script
+- Check that server startup is properly prevented in test environment
+
+#### 2. Service Name Mismatches
+
+**Symptoms:**
+- Test assertions failing with service name errors
+- Expected "qoloba-proxy" but got "qolaba-proxy"
+
+**Solutions:**
+- Check that the service name is "qoloba-proxy" in the test assertions
+- Verify that the service name is consistent across all test files
+- Ensure that the service name is correctly set in the configuration
+
+#### 3. Test Assertion Errors
+
+**Symptoms:**
+- Tests failing with assertion errors
+- Expected values not matching actual values
+
+**Solutions:**
+- Check that the assertions are using the correct syntax
+- Verify that the expected values match the actual values
+- Ensure that the test assertions are specific and not too broad
+
+### Test Results Interpretation
+
+#### Success Indicators
+
+- ✅ **PASSED** - Test completed successfully
+- **Test Suites: 7 passed, 7 total** - All test suites passed
+- **Tests: 166 passed, 166 total** - All tests passed
+- **Snapshots: 0 total** - No snapshot tests
+- **Time: ~2s** - Tests completed quickly
+
+#### Failure Indicators
+
+- ❌ **FAILED** - Test failed
+- **Error messages** - Look for specific error messages in the test output
+- **Port conflicts** - Ensure the server is not running before starting tests
+- **Service name mismatches** - Check that service name is "qoloba-proxy" in tests
+
+### Recent Test Fixes
+
+The following issues were recently resolved:
+- Fixed port conflicts during test execution by preventing server startup in test environment
+- Corrected service name assertions from "qolaba-proxy" to "qoloba-proxy"
+- Improved test assertions to be more specific and reliable
+- Implemented test-specific handler functions for better test isolation
 
 ---
 

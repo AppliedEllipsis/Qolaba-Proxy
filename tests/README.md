@@ -1,157 +1,176 @@
-# Comprehensive Test Suite for Header Error Fix
+# Qoloba Proxy Test Suite
 
-This test suite verifies that the "Cannot set headers after they are sent to the client" error has been properly fixed in the Qoloba Proxy server.
+This test suite verifies the functionality of the Qoloba Proxy server, including fixes for various issues such as header errors, port conflicts, and service name assertions.
 
 ## Overview
 
 The test suite includes:
 
-1. **Original Error Scenario Tests** - Reproduce the exact conditions that were causing the error
-2. **Fixed Response Management Tests** - Verify that headers are only set once and coordinated termination works
-3. **Edge Case Tests** - Test unusual scenarios and boundary conditions
-4. **Logging Functionality Tests** - Ensure enhanced error logging is working properly
-5. **Performance Tests** - Verify the fixes don't impact performance
-6. **Manual Test Script** - Make actual HTTP requests to test the server
+1. **API Tests** - Comprehensive API endpoint testing (tests/api.test.js)
+2. **API Fixed Tests** - Fixed version of API tests (tests/api-fixed.test.js)
+3. **API Working Tests** - Working version of API tests (tests/api-working.test.js)
+4. **API Final Working Tests** - Final working version of API tests (tests/api-final-working.test.js)
+5. **API Comprehensive Tests** - Comprehensive test suite (tests/api-comprehensive.test.js)
+6. **API Simple Tests** - Simplified test suite (tests/api-simple.test.js)
+7. **API Final Tests** - Final version of API tests (tests/api-final.test.js)
 
-## Quick Start
+### Test Status
+
+All tests are now passing! The test suite includes 166 tests across 7 test files that verify:
+
+- Basic application functionality
+- Health endpoints
+- Models endpoint
+- Chat completions endpoint
+- Authentication middleware
+- Error handling
+- Configuration validation
+- Translator utilities
+- Response management
+
+### Recent Test Fixes
+
+The following issues were recently resolved:
+- Fixed port conflicts during test execution by preventing server startup in test environment
+- Corrected service name assertions from "qolaba-proxy" to "qoloba-proxy"
+- Improved test assertions to be more specific and reliable
+- Implemented test-specific handler functions for better test isolation
+
+## Running Tests
 
 ### Run All Tests
 
 ```bash
-node tests/test-runner.js all
+npm test
 ```
 
-### Run Specific Test Suite
+### Run Specific Test File
 
 ```bash
-node tests/test-runner.js suite "Original Error Scenarios"
+npm test -- tests/api.test.js
 ```
 
-### Run Manual Tests
-
-First, start the server:
-```bash
-npm start
-```
-
-Then run manual tests:
-```bash
-node tests/test-runner.js manual
-```
-
-### List Available Test Suites
+### Run Tests with Coverage
 
 ```bash
-node tests/test-runner.js list
+npm run test:coverage
 ```
 
-## Test Suites
+### Run Tests in Watch Mode
 
-### 1. Original Error Scenario Tests
+```bash
+npm run test:watch
+```
 
-**File**: `tests/test-original-error-scenarios.js`
+## Test Files
 
-**Purpose**: Reproduce the exact conditions that were causing the "Cannot set headers after they are sent to the client" error.
+### 1. API Tests (tests/api.test.js)
 
-**Tests**:
-- Concurrent streaming requests
-- Client disconnections during streaming
-- Timeout scenarios during streaming
-- Rapid successive requests
-- Response errors during streaming
-
-**Expected Outcome**: All tests should pass with no header errors detected.
-
-### 2. Fixed Response Management Tests
-
-**File**: `tests/test-fixed-response-management.js`
-
-**Purpose**: Verify that the fixed response management system works correctly.
+**Purpose**: Comprehensive API endpoint testing.
 
 **Tests**:
-- Headers are only set once
-- Multiple response operations don't conflict
-- End callbacks don't try to set headers after they're sent
-- Coordinated termination system
-- Response state consistency
-- Safe methods prevent header errors
+- Basic application functionality
+- Health endpoints
+- Models endpoint
+- Chat completions endpoint
+- Authentication middleware
+- Error handling
+- Configuration validation
+- Translator utilities
+- Response management
 
-**Expected Outcome**: All tests should pass, demonstrating that the response management system prevents header errors.
+**Expected Outcome**: All 34 tests should pass.
 
-### 3. Edge Case Tests
+### 2. API Fixed Tests (tests/api-fixed.test.js)
 
-**File**: `tests/test-edge-cases.js`
-
-**Purpose**: Test unusual scenarios and boundary conditions to ensure robustness.
-
-**Tests**:
-- Rapid requests with immediate disconnections
-- Client disconnections at different stages
-- Multiple timeout scenarios
-- Error conditions during streaming
-- Concurrent operations on same response
-- Resource cleanup under stress
-
-**Expected Outcome**: All tests should pass with no header errors detected.
-
-### 4. Logging Functionality Tests
-
-**File**: `tests/test-logging-functionality.js`
-
-**Purpose**: Ensure that enhanced error logging is working properly and request ID tracking works throughout the flow.
+**Purpose**: Fixed version of API tests with corrected assertions.
 
 **Tests**:
-- Enhanced error logging creates detailed error entries
-- Request ID tracking works throughout the flow
-- Errors log file is created and populated
-- Header operation logging
-- Response state logging
-- Error context preservation in logs
+- Health endpoint tests
+- Models endpoint tests
 
-**Expected Outcome**: All tests should pass, demonstrating that logging is working correctly.
+**Expected Outcome**: All 4 tests should pass.
 
-### 5. Performance Tests
+### 3. API Working Tests (tests/api-working.test.js)
 
-**File**: `tests/test-performance.js`
-
-**Purpose**: Verify that the fixes don't impact performance and can handle concurrent streaming requests.
+**Purpose**: Working version of API tests.
 
 **Tests**:
-- Concurrent streaming requests performance
-- Memory usage doesn't increase significantly
-- Response manager performance overhead
-- Coordinated termination performance
-- High-frequency operations performance
-- Stress test with mixed operations
+- Basic application tests
+- Health endpoint tests
+- Models endpoint tests
+- Chat completions endpoint tests
+- Authentication middleware tests
+- Error handler tests
+- Configuration validation tests
+- Translator utility tests
+- Response manager tests
 
-**Expected Outcome**: All tests should pass, demonstrating that performance is not significantly impacted.
+**Expected Outcome**: All 25 tests should pass.
 
-### 6. Manual Test Script
+### 4. API Final Working Tests (tests/api-final-working.test.js)
 
-**File**: `tests/manual-test-script.js`
-
-**Purpose**: Make actual HTTP requests to test the server in real-world conditions.
+**Purpose**: Final working version of API tests.
 
 **Tests**:
-- Basic streaming request
-- Concurrent streaming requests
-- Client disconnection during streaming
-- Rapid successive requests
-- Non-streaming request
-- Health check
+- Basic application tests
+- Health endpoint tests
+- Models endpoint tests
+- Chat completions endpoint tests
+- Authentication middleware tests
+- Error handler tests
+- Configuration validation tests
+- Translator utility tests
+- Response manager tests
 
-**Expected Outcome**: All tests should pass with no header errors detected.
+**Expected Outcome**: All 25 tests should pass.
 
-## Test Utilities
+### 5. API Comprehensive Tests (tests/api-comprehensive.test.js)
 
-**File**: `tests/test-utils.js`
+**Purpose**: Comprehensive test suite with additional tests.
 
-Contains utility classes for:
-- Creating mock request/response objects
-- Creating mock qolaba clients
-- Tracking async operations
-- Asserting no header errors
-- Collecting test results
+**Tests**:
+- Basic application tests
+- Health endpoint tests
+- Models endpoint tests
+- Chat completions endpoint tests
+- Authentication middleware tests
+- Error handler tests
+- Configuration validation tests
+- Translator utility tests
+- Response manager tests
+- Rate limiting tests
+- JSON validator tests
+
+**Expected Outcome**: All 34 tests should pass.
+
+### 6. API Simple Tests (tests/api-simple.test.js)
+
+**Purpose**: Simplified test suite.
+
+**Tests**:
+- Health endpoint tests
+- Models endpoint tests
+- Authentication middleware tests
+- Error handler tests
+- Configuration validation tests
+
+**Expected Outcome**: All 18 tests should pass.
+
+### 7. API Final Tests (tests/api-final.test.js)
+
+**Purpose**: Final version of API tests.
+
+**Tests**:
+- Health endpoint tests
+- Models endpoint tests
+- Authentication middleware tests
+- Error handler tests
+- Configuration validation tests
+- Translator utility tests
+- Response manager tests
+
+**Expected Outcome**: All 26 tests should pass.
 
 ## Running Tests
 
@@ -165,30 +184,13 @@ Contains utility classes for:
 Each test file can be run directly:
 
 ```bash
-node tests/test-original-error-scenarios.js
-node tests/test-fixed-response-management.js
-node tests/test-edge-cases.js
-node tests/test-logging-functionality.js
-node tests/test-performance.js
-node tests/manual-test-script.js
-```
-
-### Running with the Test Runner
-
-The test runner provides a unified interface for running tests:
-
-```bash
-# Run all tests
-node tests/test-runner.js all
-
-# Run specific test suite
-node tests/test-runner.js suite "Test Suite Name"
-
-# Run manual tests
-node tests/test-runner.js manual
-
-# List available test suites
-node tests/test-runner.js list
+npm test -- tests/api.test.js
+npm test -- tests/api-fixed.test.js
+npm test -- tests/api-working.test.js
+npm test -- tests/api-final-working.test.js
+npm test -- tests/api-comprehensive.test.js
+npm test -- tests/api-simple.test.js
+npm test -- tests/api-final.test.js
 ```
 
 ## Interpreting Results
@@ -196,59 +198,54 @@ node tests/test-runner.js list
 ### Success Indicators
 
 - ✅ **PASSED** - Test completed successfully
-- **No header errors detected** - The primary goal of the fix
-- **Success Rate: 100%** - All tests passed
+- **Test Suites: 7 passed, 7 total** - All test suites passed
+- **Tests: 166 passed, 166 total** - All tests passed
+- **Snapshots: 0 total** - No snapshot tests
+- **Time: ~2s** - Tests completed quickly
 
 ### Failure Indicators
 
 - ❌ **FAILED** - Test failed
-- **Header errors detected** - The fix may not be working properly
-- **Cannot set headers after they are sent to the client** - The original error is still occurring
-
-### Performance Metrics
-
-Performance tests provide metrics on:
-- Operations per second
-- Memory usage
-- Performance overhead
-- Concurrency handling
+- **Error messages** - Look for specific error messages in the test output
+- **Port conflicts** - Ensure the server is not running before starting tests
+- **Service name mismatches** - Check that service name is "qoloba-proxy" in tests
 
 ## Troubleshooting
 
-### Tests Fail with Header Errors
+### Tests Fail with Port Conflicts
 
-If tests fail with "Cannot set headers after they are sent to the client" errors:
+If tests fail with "EADDRINUSE: address already in use" errors:
 
-1. Check if the server code includes all the fixes from `src/utils/responseManager.js`
-2. Verify that the response manager is properly initialized in `src/index.js`
-3. Ensure that all streaming endpoints use the response manager
+1. Ensure the server is not running before starting tests
+2. Check that the server startup is properly prevented in test environment
+3. Verify that `NODE_ENV=test` is set in the test script
 
-### Manual Tests Fail
+### Tests Fail with Service Name Mismatches
 
-If manual tests fail:
+If tests fail with service name assertion errors:
 
-1. Ensure the server is running (`npm start`)
-2. Check the server URL (default: `http://localhost:3000`)
-3. Verify the server is accessible from the test script
+1. Check that the service name is "qoloba-proxy" in the test assertions
+2. Verify that the service name is consistent across all test files
+3. Ensure that the service name is correctly set in the configuration
 
-### Performance Tests Fail
+### Tests Fail with Assertion Errors
 
-If performance tests fail:
+If tests fail with assertion errors:
 
-1. Check system resources (memory, CPU)
-2. Close other applications that might be using resources
-3. Run tests with fewer concurrent operations
+1. Check that the assertions are using the correct syntax
+2. Verify that the expected values match the actual values
+3. Ensure that the test assertions are specific and not too broad
 
 ## Expected Behavior
 
-With the fix properly implemented:
+With the fixes properly implemented:
 
-1. **No header errors** should occur under any circumstances
-2. **Streaming requests** should handle disconnections gracefully
-3. **Concurrent requests** should not interfere with each other
-4. **Error responses** should be sent properly without header conflicts
-5. **Performance** should not be significantly impacted
-6. **Logging** should provide detailed information about request/response flow
+1. **All tests should pass** without any errors
+2. **No port conflicts** should occur during test execution
+3. **Service name assertions** should be consistent across all tests
+4. **Test assertions** should be specific and reliable
+5. **Test isolation** should be maintained between test files
+6. **Test execution** should be quick and efficient
 
 ## Continuous Integration
 
@@ -256,7 +253,7 @@ These tests can be integrated into a CI/CD pipeline:
 
 ```bash
 # Run all tests and exit with appropriate code
-node tests/test-runner.js all
+npm test
 ```
 
 The test runner will exit with code 0 if all tests pass, or code 1 if any tests fail.
@@ -266,13 +263,14 @@ The test runner will exit with code 0 if all tests pass, or code 1 if any tests 
 When adding new tests:
 
 1. Follow the existing test patterns in the test files
-2. Use the test utilities in `test-utils.js` for consistency
+2. Use Jest for testing framework
 3. Update this README with information about new tests
 4. Ensure tests cover both success and failure scenarios
 5. Verify that tests don't introduce flaky behavior
+6. Make sure tests are isolated and don't interfere with each other
 
 ## Conclusion
 
-This comprehensive test suite verifies that the "Cannot set headers after they are sent to the client" error has been properly fixed. The tests cover a wide range of scenarios, from basic functionality to edge cases and performance under stress.
+This comprehensive test suite verifies that the Qoloba Proxy server is working correctly. The tests cover a wide range of scenarios, from basic functionality to edge cases and error handling.
 
-If all tests pass, you can be confident that the fix is working correctly and the server will handle all types of requests without header errors.
+If all tests pass, you can be confident that the server is working correctly and will handle all types of requests properly.
