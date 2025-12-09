@@ -368,6 +368,7 @@ qoloba-proxy/
 ├── docker-compose.yml        # Docker configuration
 ├── Dockerfile               # Docker build file
 ├── package.json             # Node.js dependencies
+├── LICENSE                   # GNU General Public License v3.0
 └── README.md                # This file
 ```
 
@@ -547,7 +548,7 @@ Set `"stream": true` in your request to enable streaming responses. The proxy wi
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
 
 ## 📚 Documentation
 
@@ -582,19 +583,34 @@ If you encounter issues or have questions:
 ---
 
 **Built with ❤️ for the AI development community**
-// Note for test workflows
-// Important: Start the server before running test scripts to observe streaming in real-time.
-// See ai.md for detailed knowledge base and testing guidelines.
-// Tests and how to run them
-// - Run the standard test suite (uses Jest as configured in package.json):
-//     npm test
-// - Run header-fix focused tests (per the repo's scripts):
-//     npm run test:header-fix
-// - Run a specific test file (if using Jest with a single test file path):
-//     npm test -- tests/<filename>.js
-// - If the project requires ES module execution, ensure Node runs with proper module support (e.g., "type": "module" in package.json or use --input-type=module as needed).
-//
-// Documentation notes:
-// - ES modules are used across test files where possible; some legacy scripts may still rely on dynamic imports.
-// - The test runner entrypoints (tests/test-runner.js and related test-*.js files) should import correctly in an ES module context.
-// - Ensure package.json scripts align with your CI environment; if Jest is not desired, you can swap test runner commands accordingly.
+
+## 🧪 Developer Notes
+
+### Testing Guidelines
+
+**Important:** Start the server before running test scripts to observe streaming in real-time. See [ai.md](docs/ai.md) for detailed knowledge base and testing guidelines.
+
+#### Running Tests
+
+- **Standard test suite** (uses Jest as configured in package.json):
+  ```bash
+  npm test
+  ```
+
+- **Header-fix focused tests** (per the repo's scripts):
+  ```bash
+  npm run test:header-fix
+  ```
+
+- **Specific test file** (if using Jest with a single test file path):
+  ```bash
+  npm test -- tests/<filename>.js
+  ```
+
+- **ES module execution**: Ensure Node runs with proper module support (e.g., `"type": "module"` in package.json or use `--input-type=module` as needed).
+
+### Documentation Notes
+
+- ES modules are used across test files where possible; some legacy scripts may still rely on dynamic imports.
+- The test runner entrypoints (tests/test-runner.js and related test-*.js files) should import correctly in an ES module context.
+- Ensure package.json scripts align with your CI environment; if Jest is not desired, you can swap test runner commands accordingly.
