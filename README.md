@@ -354,7 +354,7 @@ The following issues were recently resolved:
 
 ### Project Structure
 
-```
+```text
 qoloba-proxy/
 ├── src/
 │   ├── index.js              # Main server entry point
