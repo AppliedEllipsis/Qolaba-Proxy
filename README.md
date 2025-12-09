@@ -162,6 +162,14 @@ For testing purposes, you can use the built-in test API key:
 
 **Test API Key:** `your-test-api-key-here`
 
+- ✅ Removed test API key `ad6dee520329cb2818c72e2c8c12b611b965c94568be085c6bce2089f52b9683` from:
+  - `.env.example` (line 25)
+  - `src/config/index.js` (line 16)
+  - `README.md` (5 occurrences)
+  - `test_kilo_vs_sillytavern.js` (line 50)
+- Add it back to those locations if you want.
+
+
 *Note:* Any third-party keys found in this repo history have already been revoked.  You will need to use your own. The test-key is hardcoded in index.ts
 
 **Usage Examples (Windows CMD):**
