@@ -162,6 +162,8 @@ For testing purposes, you can use the built-in test API key:
 
 **Test API Key:** `your-test-api-key-here`
 
+*Note:* Any third-party keys found in this repo history have already been revoked.  You will need to use your own. The test-key is hardcoded in index.ts
+
 **Usage Examples (Windows CMD):**
 ```cmd
 rem Using test API key for models list

@@ -168,3 +168,19 @@ yarn.lock.backup
 # Temporary upload folders
 uploads/
 uploads-*/
+
+# Sensitive data patterns
+*.key
+*.pem
+*.p12
+secrets.txt
+.env.local
+.env.production
+.env.staging
+
+# API keys in logs
+logs/*.log
+*.log
+
+# Secret scanning
+.git-secrets
