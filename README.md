@@ -40,8 +40,8 @@ So I have some good news and some bad news.
 
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd qoloba-proxy
+git clone https://github.com/AppliedEllipsis/Qolaba-Proxy.git
+cd Qolaba-Proxy
 
 # Install dependencies
 npm install
@@ -467,9 +467,9 @@ The proxy tracks:
 
 For comprehensive troubleshooting guides, see our detailed documentation:
 
-- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Complete troubleshooting guide with solutions for common issues
-- **[TIMEOUT_ERROR_HANDLING.md](TIMEOUT_ERROR_HANDLING.md)** - Specific timeout error handling documentation
-- **[STREAMING_FIX_IMPLEMENTATION_PLAN.md](streaming-fix-implementation-plan.md)** - Streaming fixes and implementation details
+- **[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Complete troubleshooting guide with solutions for common issues
+- **[TIMEOUT_ERROR_HANDLING.md](docs/TIMEOUT_ERROR_HANDLING.md)** - Specific timeout error handling documentation
+- **[STREAMING_FIX_IMPLEMENTATION_PLAN.md](docs/streaming-fix-implementation-plan.md)** - Streaming fixes and implementation details
 
 ### Common Issues
 
@@ -490,11 +490,11 @@ For comprehensive troubleshooting guides, see our detailed documentation:
    - Use the model names returned by `/v1/models`
 
 5. **"Streaming request timeout"**
-   - See [TROUBLESHOOTING.md](TROUBLESHOOTING.md#1-streaming-request-timeouts) for timeout configuration
+   - See [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#1-streaming-request-timeouts) for timeout configuration
    - Set `REQUEST_TIMEOUT=120000` for proper timeout handling
 
 6. **"Cannot set headers after they are sent"**
-   - See [TROUBLESHOOTING.md](TROUBLESHOOTING.md#3-cannot-set-headers-after-sent-errors) for race condition fixes
+   - See [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#3-cannot-set-headers-after-sent-errors) for race condition fixes
 
 ### Debug Mode
 
@@ -555,14 +555,14 @@ This project includes comprehensive documentation to help you get started and tr
 
 ### Core Documentation
 - **[README.md](README.md)** - This file, main project documentation
-- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Complete troubleshooting guide with solutions for common issues
-- **[TIMEOUT_ERROR_HANDLING.md](TIMEOUT_ERROR_HANDLING.md)** - Specific timeout error handling documentation
-- **[STREAMING_FIX_IMPLEMENTATION_PLAN.md](streaming-fix-implementation-plan.md)** - Streaming fixes and implementation details
+- **[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Complete troubleshooting guide with solutions for common issues
+- **[TIMEOUT_ERROR_HANDLING.md](docs/TIMEOUT_ERROR_HANDLING.md)** - Specific timeout error handling documentation
+- **[STREAMING_FIX_IMPLEMENTATION_PLAN.md](docs/streaming-fix-implementation-plan.md)** - Streaming fixes and implementation details
 
 ### Additional Documentation
-- **[CHANGELOG.md](CHANGELOG.md)** - Version history and changes
-- **[ai.md](ai.md)** - AI knowledge base and testing guidelines
-- **[hanging-issues-analysis.md](hanging-issues-analysis.md)** - Analysis of hanging issues and solutions
+- **[CHANGELOG.md](docs/CHANGELOG.md)** - Version history and changes
+- **[ai.md](docs/ai.md)** - AI knowledge base and testing guidelines
+- **[hanging-issues-analysis.md](docs/hanging-issues-analysis.md)** - Analysis of hanging issues and solutions
 
 ## 🔗 Links
 
@@ -575,7 +575,7 @@ This project includes comprehensive documentation to help you get started and tr
 If you encounter issues or have questions:
 
 1. Check the [troubleshooting section](#-troubleshooting)
-2. Search existing [GitHub Issues](https://github.com/your-org/qolaba-proxy/issues)
+2. Search existing [GitHub Issues](https://github.com/AppliedEllipsis/Qolaba-Proxy/issues)
 3. Create a new issue with detailed information
 4. Include logs and configuration details (with sensitive data redacted)
 
