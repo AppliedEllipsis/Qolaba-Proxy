@@ -558,6 +558,12 @@ export async function handleStreamingResponse(responseManager, res, req, qolabaC
       throw new Error('Failed to set streaming headers')
     }
 
+    // CRITICAL FIX: Flush headers immediately to ensure streaming starts
+    // Some clients (Jan, Kilo Code, etc.) won't receive data until headers are flushed
+    if (res.flushHeaders) {
+      res.flushHeaders()
+    }
+
     let fullResponse = ''
     let isFirstChunk = true
     const sseWriter = new SafeSSEWriter(responseState)

@@ -34,10 +34,58 @@ const app = express()
 const server = createServer(app)
 
 // Basic middleware
-app.use(helmet())
+// Configure helmet to be API-friendly for Electron apps (VS Code, Jan, Kilo Code, Msty)
+// These apps enforce browser-like security policies, so we need to relax several headers
+app.use(helmet({
+  // Allow cross-origin resource loading
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  // Allow embedding from any origin
+  crossOriginEmbedderPolicy: false,
+  // Allow opening windows from any origin
+  crossOriginOpenerPolicy: false,
+  // Disable Content-Security-Policy for API usage (not serving HTML)
+  contentSecurityPolicy: false,
+  // Allow loading in frames (some clients use iframes)
+  frameguard: false,
+  // Disable HSTS for local development (can cause issues with localhost)
+  hsts: false
+}))
 app.use(cors({
   origin: config.cors.origin,
-  credentials: config.cors.credentials
+  credentials: config.cors.credentials,
+  // Explicitly allow all methods used by OpenAI-compatible clients
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
+  // Allow all headers that clients might send
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Api-Key',
+    'X-Request-ID',
+    'Accept',
+    'Accept-Encoding',
+    'Accept-Language',
+    'Cache-Control',
+    'Connection',
+    'Host',
+    'Origin',
+    'Referer',
+    'User-Agent',
+    'X-Requested-With'
+  ],
+  // Expose headers that clients might need to read
+  exposedHeaders: [
+    'X-Request-ID',
+    'X-RateLimit-Limit',
+    'X-RateLimit-Remaining',
+    'X-RateLimit-Reset',
+    'Content-Type',
+    'Content-Length'
+  ],
+  // Allow preflight requests to be cached for 24 hours
+  maxAge: 86400,
+  // Handle preflight OPTIONS requests
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }))
 
 // Enhanced error handling for JSON parsing
@@ -71,11 +119,12 @@ if (config.logging.enabled) {
 app.use(requestLogger)
 
 // Request timeout middleware using unified timeout manager (prevents hanging requests)
+// Note: Increased timeouts to accommodate Qolaba API response times (can be 7+ seconds)
 app.use(createUnifiedRequestTimeout({
-  defaultTimeout: 30000,     // 30 seconds for non-streaming
-  streamingTimeout: 120000,  // 2 minutes for streaming
-  maxTimeout: 300000,        // 5 minutes absolute maximum
-  inactivityTimeout: 60000   // 1 minute inactivity timeout
+  defaultTimeout: 120000,    // 2 minutes for non-streaming (increased from 30s)
+  streamingTimeout: 300000,  // 5 minutes for streaming (increased from 2 min)
+  maxTimeout: 600000,        // 10 minutes absolute maximum (increased from 5 min)
+  inactivityTimeout: 120000  // 2 minutes inactivity timeout (increased from 1 min)
 }))
 
 // Rate limiting
@@ -97,6 +146,21 @@ app.get('/v1', (req, res) => {
     version: '1.0.0',
     provider: 'qoloba-proxy',
     status: 'operational'
+  })
+})
+
+// Root endpoint for clients that probe /
+app.get('/', (req, res) => {
+  res.json({
+    object: 'api',
+    version: '1.0.0',
+    provider: 'qoloba-proxy',
+    status: 'operational',
+    endpoints: {
+      chat: '/v1/chat/completions',
+      models: '/v1/models',
+      health: '/health'
+    }
   })
 })
 

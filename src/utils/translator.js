@@ -73,10 +73,17 @@ export function translateQolabaToOpenAI(qolabaResponse, originalRequest, isStrea
 }
 
 // Translate OpenAI messages to Qolaba history format
+// NOTE: System messages are extracted separately to system_msg field,
+// so we filter them out from the history to avoid duplication
 function translateMessages(messages) {
   const history = []
 
   for (const message of messages) {
+    // Skip system messages - they are handled separately via system_msg field
+    if (message.role === 'system') {
+      continue
+    }
+
     const qolabaMessage = {
       role: message.role,
       content: {
